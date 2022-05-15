@@ -1,0 +1,163 @@
+
+Установка DHCP-сервера в Ubuntu 20.04
+Производим установку DHCP-сервера, с помощью пакетного менеджера apt.
+# apt install isc-dhcp-server
+
+В процессе установки, DHCP-сервер запускается, и добавляется в автозагрузку.
+Базовая настройка DHCP-сервера в Ubuntu 20.04
+Конфигурационный файл DHCP-сервера, находится по адресу /etc/dhcp/dhcpd.conf.
+Базовая конфигурация сервера, выглядит таким образом:
+
+option domain-name "localhost.localdomain";
+option domain-name-servers 192.168.1.1;
+default-lease-time 32400;
+max-lease-time 604800;
+log-facility local7;
+subnet 192.168.1.0 netmask 255.255.255.0 {
+authoritative;
+range 192.168.1.10 192.168.1.100;
+option routers 192.168.1.1;
+option subnet-mask 255.255.255.0;
+option broadcast-address 192.168.1.255;
+ }
+
+option domain-name – доменное имя
+option domain-name-servers – DNS-сервер
+default-lease-time – время по умолчанию (в секундах) аренды ip-адреса для клиентов
+max-lease-time – максимальное время (в секундах) аренды ip-адреса для клиентов
+log-facility local7 – логирование в отдельный файл
+subnet, netmask – подсеть, и маска подсети
+authoritative – назначение главным DHCP-сервером в этой сети
+range – диапазон ip-адресов для раздачи клиентам
+option routers – основной шлюз
+option subnet-mask – маска подсети
+option broadcast-address – широковещательный ip-адрес
+
+Вносим конфигурацию в конфигурационный файл, и сохраняем его.
+Нужно перезапустить DHCP-сервер, чтобы изменения вступили в силу.
+# systemctl restart isc-dhcp-server
+
+
+Настройка Firewall для работы DHCP-сервера в Ubuntu 20.04
+DHCP-сервер работает на 67 порту, нужно открыть этот порт в Firewall.
+Если Вы используете для конфигурации брандмауэра утилиту UFW, то команда будет такой:
+
+# ufw allow 67/tcp
+
+Для iptables, команда будет выглядеть таким образом:
+# iptables -A INPUT -p tcp --dport 67 -j ACCEPT
+# iptables-save > /etc/iptables/rules.v4
+
+Настройка логирования DHCP-сервера в отдельный файл
+Для того, чтобы логирование DHCP-сервера производилось в отдельный файл, нужно добавить одну строчку, в конфигурационный файл службы Rsyslog. Добавляем требуемое, в конце файла /etc/rsyslog.conf.
+local7.* /var/log/dhcpd.log
+
+Чтобы изменения вступили в силу, перезапускаем Rsyslog.
+# systemctl restart rsyslog
+
+После перезагрузки Rsyslog, логирование DHCP-сервера, будет производится в файл /var/log/dhcpd.log.
+
+
+Удаление DHCP-сервера в Ubuntu 20.04
+Для полного удаления DHCP-сервера в Ubuntu 20.04, потребуются три команды. Нужно остановить DHCP-сервер, убрать его с автозагрузки, и удалить сам пакет DHCP-сервера.
+# systemctl stop isc-dhcp-server
+# systemctl disable isc-dhcp-server
+# apt remove isc-dhcp-server
+
+********************************************************
+
+Начальная конфигурация:
+
+Ubuntu Server 20.04
+Настроенный DNS сервер.
+Одна сетевая карта только для локального построения сети без доступа к интернету.
+Две сетевых карты для локальной сети и доступа в интернет.
+
+Установка DHCP сервера
+Для установки нашего dhcp сервера воспользуемся пакетом isc-dhcp-server входящий в официальный репозиторий Ubuntu.
+sudo apt update && sudo apt dist-upgrade -y && sudo apt install isc-dhcp-server
+
+Настройка DHCP сервера
+После установке пакета isc-dhcp-server его необходимо сконфигурировать под наши нужды.
+Открываем конфигурационный файл:
+sudo nano /etc/dhcp/dhcpd.conf
+
+Отредактируем его:
+
+ddns-update-style none; 
+authoritative; 
+log-facility local7; 
+subnet 10.5.5.0 netmask 255.255.255.0 {
+  range 10.5.5.10 10.5.5.100;
+  option domain-name-servers 10.5.5.1;
+  option domain-name "lan";
+  option subnet-mask 255.255.255.0;
+  option routers 10.5.5.1;
+  option broadcast-address 10.5.5.255;
+  default-lease-time 600;
+  max-lease-time 3600;  
+} 
+#host ваше_название { 
+  #hardware ethernet ab:22:0b:4d:11:1d; 
+  #fixed-address 10.5.5.2; #         }
+
+
+subnet — блок в котором описывается наша сеть (пул IP адресов и маска сети).
+range — диапазон IP адресов клиентов.
+option domain-name-servers — тут прописываем ip адрес сервера dns.
+option domain-name — название домена. В моем случае «lan».
+option subnet-mask — маска сети.
+option routers — ip адрес роутера. У нас это наша же машина.
+option broadcast-address — широковещательный адрес в сети, обычно это последний адрес сети «255».
+default-lease-time — время аренды адреса у сервера.
+max-lease-time — максимальное время аренды адреса у сервера.
+host — в данном блоке описывается настройки для выделенных IP адресов сетевого оборудования в сети. ( данные IP не должны попадать в диапазон range). Сетевым оборудованием могут выступать как принтеры, сканеры, ip-телефоны так и различные девайсы — телевизоры планшеты, умные интернет вещи и т.д., для которых необходимо зафиксировать определенный IP адрес.
+hardware ethernet — MAC адрес сетевой карты для которой фиксируется IP адрес.
+fixed-address — фиксированный IP адрес.
+
+Так же если вы хотите, чтобы DHCP сервер обрабатывал запросы только с определенной сетевой карты, необходимо указать это в настройках. Для этого смотрим имя интерфейса, который смотрит в локальную сеть:
+
+ifconfig
+
+
+У меня вывод следующий, у вас может быть другой, но суть от этого не меняется:
+
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.5.1.1  netmask 255.255.255.0  broadcast 10.5.1.255
+        inet6 fe80::3445:5dff:fec7:c68c  prefixlen 64  scopeid 0x20<link>
+        ether 36:45:5d:c7:c6:8c  txqueuelen 1000  (Ethernet)
+        RX packets 1944624  bytes 1235126530 (1.2 GB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 1900221  bytes 1221337743 (1.2 GB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        inet6 ::1  prefixlen 128  scopeid 0x10<host>
+        loop  txqueuelen 1000  (Локальная петля (Loopback))
+        RX packets 112  bytes 15791 (15.7 KB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 112  bytes 15791 (15.7 KB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+
+
+У меня интерфейс eth0 смотрит в локальную сеть.
+
+Давайте настроим сервер на прослушивания определенного интерфейса. Открываем следующий файл для редактирования.
+
+sudo nano /etc/default/isc-dhcp-server
+
+В конце прописываем следующее:
+
+INTERFACESv4="eth0"
+
+eth0 — имя нашего интерфейса
+
+После данной манипуляции наш DHCP сервер будет принимать и отправлять запросы только от интерфейса wlan0.
+
+Перезагружаем сервис:
+
+sudo service isc-dhcp-server restart
+
+

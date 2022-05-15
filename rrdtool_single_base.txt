@@ -1,0 +1,246 @@
+RRD с одной базой и одним графиком
+
+
+создаем базу в которой бужем хранить наши значения
+
+получим число, которое будем мониторить и запишем его в переменную (перед и после знака равно - нет пробелов)
+UPDATEZNACHEN=`shuf -i 30-50 -n1`
+
+
+создаем саму базу
+rrdtool create cpuz.rrd  - создать базу с именем cpuz.rrd
+
+(быть внимательным к сбору данных, если скрипт обновляет базу 1 раз в минуту, то собрать данные меньше минуты - не полцчится - будут "дыры" -  но это не точно)
+
+как часто мы будем записывать новую порцию данных, в данном случае - раз в 30 сек. Если данные придут раньше или позже то rrdtool интерполирует
+значение и выровняет их по тридцатисекундным границам
+--step 30
+
+DS параметр описывает источник данных - для сохранения в него - нужны архивы и в одной базе архивов может быть несколько источников данных
+создает источник данных DS
+под названием UPDATEZNACHEN
+с типом GAUGE (как есть, не вычисляет ничего)
+если в течен 60 секунд (heartbeat interval) новых данных не поступает - сохранит UNDEFINED
+значения варьируются от 0
+до 60
+
+DS:UPDATEZNACHEN:GAUGE:60:0:60
+
+
+агрегированное временное окно с данными. как в случае с DS, их может быть несколько
+
+
+создаем циклический архив RRA
+длиной в 3600 элементов
+каждый из которых это среденн AVERAGE
+от   1    первичной точки
+если больше половины  >0.5  значений в 1 - UNDEFINED, в архив так же идет UNDEFINED
+0.5
+
+RRA:AVERAGE:0.5:1:3600
+
+
+все вместе
+rrdtool create cpuz.rrd --step 30 DS:UPDATEZNACHEN:GAUGE:60:0:60 RRA:AVERAGE:0.5:1:3600
+
+но тут будут "дыры" если делать "видимость" на графике 2 часа (до 20 часов "есть дыры")
+поэтому исправим значения на step 60 и AVERAGE:0.5:6:3600
+
+
+создать базу на 15 дней
+rrdtool create temp_ch1_15d.rrd --step 30 DS:temp_ch1_15d:GAUGE:60:0:60 RRA:AVERAGE:0.5:6:1296000
+
+отрисовать график на 15 дней
+rrdtool graph fan24.png  -x MINUTE:30:HOUR:1:HOUR:4:0:%X  -s end-360h -w 1024 -h 500 -u 60 -t nazvanie_verh --vertical-label obo_RPM4 DEF:UPDATEZNACHEN=cpuz.rrd:UPDATEZNACHEN:AVERAGE AREA:UPDATEZNACHEN#00FF00:OBORA LINE1:UPDATEZNACHEN#AC0EF0 2>>grp.txt
+
+создать базу на 12 часов
+rrdtool create temp_ch_12h.rrd --step 30 DS:temp_ch1:GAUGE:60:0:100 RRA:AVERAGE:0.5:6:43200
+
+отрисовать график на 12 часов
+rrdtool graph temp_ch1.png -x MINUTE:30:HOUR:1:HOUR:3:0:%X -s end-12h -w 800 -h 500 -t TEMPERATURE_CHASIS_1 -v TEMPERATURE DEF:temp_ch1=temp_ch_12h.rrd:temp_ch1:AVERAGE AREA:temp_ch1#0000FF:TEMPERATURE_CH1_12H 2>>error.txt
+
+
+в итоге получился архив, который будет хранить полминутные 30 * 1 средние значения за последние '30 сек * 1 * 3600' = 10800 / 3600 (1 час = 3600 сек) = 30 часов
+Один элемент архива называется консолидированной точкой данных Consolidated Data Point = CPD, а AVERAGE консолидирующей функцией Consolidation Function = CF
+первичные и консолидированные точки связаны между собой вот так:
+CDP1 = CF(PDP1, PDP2, .... PDPn)       - вероятно имелось ввиду CPD1, CDP2, .... CDPn
+CDP2 = CF(PDPN+1, ..... PDP2n)
+и т.д
+
+кроме average есть и другие консолидирующие функции MIN, MAX, LAST
+
+  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+построение одного графика с одной базой - отрисовка
+
+не забыть поставить права на файл и в начале вписать #!/bin/bash ну или другой интерпретатор и в скрипте делать переход внутрь папки, в которой лежит 
+скрипт и генерируемая картинка
+
+получаем значение которое отображаем
+UPDATEZNACHEN=`shuf -i 30-59 -n1`
+
+
+обновляем нашу базу, где N - now
+rrdtool update cpuz.rrd N:${UPDATEZNACHEN}
+
+
+рисуем график:
+рисуем график в файле fan24.png
+rrdtool graph fan24.png
+
+
+масштаб и отображение на карте, если его не делать - масштабируется автоматически (зависит от элементов в базе)
+
+-x можно просто -x
+ ---x-grid MINUTE:10:HOUR:1:HOUR:4:0:%X
+  This places grid lines every 10 minutes, major grid lines every hour, and labels every 4 hours. The labels are placed under the major grid lines as they specify exactly that time.
+
+  MINUTE:10 - интервал - маленькие квадратики  (а в нашем случае 30 минт)
+  HOUR:1 - интервал - большие квадратики
+  HOUR:4 - подпись по оси X времени - тут кажд 4 часа
+
+
+ --x-grid HOUR:8:DAY:1:DAY:1:86400:%A
+  This places grid lines every 8 hours, major grid lines and labels each day. The labels are placed exactly between two major grid lines as they specify the complete day and not just midnight.[root@centos rrd_test]#
+
+
+на сколько "растягиваем график"
+тут график показывает всего 2 часа
+-s end-2h
+
+так же есть значения end-30m - "растянется" будет отображать только 30 мин
+
+Time ranges
+Last four weeks: --start end-4w --end 00:00
+January 2001:    --start 20010101 --end start+31d
+January 2001:    --start 20010101 --end 20010201
+Last hour:       --start end-1h
+Last 24 hours:   <nothing at all>
+Yesterday:       --end 00:00
+
+Viewing the current and previous week together
+--end now --start end-1w
+DEF:thisweek=router.rrd:ds0:AVERAGE
+DEF:lastweek=router.rrd:ds0:AVERAGE:end=now-1w:start=end-1w
+
+
+
+длин по горизонтали - ширина в пикселях
+-w 1024
+выс по вертикали в пикселях
+-h 500
+
+подпись значений по оси Y - и высота - выше не построится
+-u 60
+
+заголовок - надпись вверху графика по центру (title)
+-t nazvanie_verh
+
+надпись с левого бока
+--vertical-label obo_RPM4
+можно просто -v obo_RPM4
+сама надпись
+obo_RPM4
+
+
+
+объявление переменной DEFENITION
+т.е. начиная с этого момента под updateznachen имеется ввиду циклический архив со средним для DS с именем UPDATEZNACHEN, который в базе cpuz.rrd, но
+в этой базе может быть несколько архивов, rrdtool выберет тот, который по временному диапазону более всего подходит к данному графику
+DEF:UPDATEZNACHEN
+
+присваиваем в нее нашу базу
+=cpuz.rrd
+
+и берем среднее значение
+AVERAGE
+
+DEF:UPDATEZNACHEN=cpuz.rrd:UPDATEZNACHEN:AVERAGE
+
+закрашиваем полученную область в цвет и подписываем (что значит этот цвет)
+надпись - OBORA
+AREA:UPDATEZNACHEN#00FF00:OBORA
+можно AREA не писать, а только LINE1 - тогда будет отрисовываться только линия, без закрашиваемой области внизу
+
+обрисовка верха линией, при одном графике на картинке выглядет не очень нужной
+LINE1:UPDATEZNACHEN#AC0EF0
+
+толщину обрисовки можно задать
+LINE2 И LINE3 - чем больше число - тем толще линия, 0.5 в толщиине тоже работает
+
+ошибки сваливать в файл
+2>>grp.txt
+
+все вместе:
+
+rrdtool graph fan24.png  -x MINUTE:30:HOUR:1:HOUR:4:0:%X  -s end-2h -w 1024 -h 500 -u 60 -t nazvanie_verh --vertical-label obo_RPM4 DEF:UPDATEZNACHEN=cpuz.rrd:UPDATEZNACHEN:AVERAGE AREA:UPDATEZNACHEN#00FF00:OBORA LINE1:UPDATEZNACHEN#AC0EF0 2>>grp.txt
+
+как это выглядит (еще раз, все вместе):
+создаем базу на 12 часов
+oborotov=`sensors | grep fan2: | cut -c 13-16`
+rrdtool create fan2_oborot_12h.rrd --step 60 DS:oborotov:GAUGE:60:0:4000 RRA:AVERAGE:0.5:6:43200
+
+обновляем базу на 12 часов и рисуем график
+#!/bin/bash
+oborotov=`sensors | grep fan2: | cut -c 13-16`
+cd /srv/rrd_fan2_12h
+rrdtool update fan2_oborot_12h.rrd N:${oborotov}
+rrdtool graph oborot_24.png -x MINUTE:30:HOUR:1:HOUR:4:0:%X -s end-12h -w 800 -h 500 -u 4000 -t RPM_FAN2_12H -v RPM_FAN2 DEF:oborotov=fan2_oborot_12h.rrd:oborotov:AVERAGE AREA:oborotov#0000FF:RPM_FAN2_12h 2>>error.txt
+
+
+другой скрипт - создаем базу на 15 дней
+создаем базу:
+oborot=`sensors | grep fan2: | cut -c 13-16`
+rrdtool create oborot_fan2_15d.rrd --step 60 DS:oborot:GAUGE:60:0:4000 RRA:AVERAGE:0.5:6:1296000
+
+обновляем базу на 15 часов и рисуем график
+#!/bin/bash
+cd /srv/rrd_fan2_15d
+oborot=`sensors | grep fan2: | cut -c 13-16`
+rrdtool update oborot_fan2_15d.rrd N:${oborot}
+
+rrdtool graph oborot_fan2_15d.png -s end-360h -w 800 -h 500 -u 4000 -t RPM_FAN2_15DAYS -v RPM_FAN2 DEF:oborot=oborot_fan2_15d.rrd:oborot:AVERAGE AREA:oborot#0000FF:RPM_FAN2_15D 2>>error.txt
+
+
+список сайтов:
+https://oss.oetiker.ch/rrdtool/doc/rrdcreate.en.html
+https://dotsandbrackets.com/quick-intro-to-rrdtool-ru/
+[root@centos rrd_test]#
+
+
+
+вопрос - как сделать, чтобы на одном графике, в ОДНОЙ БАЗЕ консолидировалось неск значений и строилось несколько графиков
+- сделано как смог, криво, так делать не правильно, но работает, хотя и криво - значит не работает
+(через создание трех баз)
+
+создаем 3 базы, а потом их поместим на 1 график (3 графика на одной картинке)
+#!/bin/bash
+UPD_ZNACHEN_1=`sensors |grep temp1: | cut -c 15-18`
+UPD_ZNACHEN_2=`sensors |grep temp2: | cut -c 15-18`
+UPD_ZNACHEN_3=`sensors |grep temp3: | cut -c 15-18`
+
+rrdtool create temper.rrd --step 60 \
+DS:UPD_ZNACHEN_1:GAUGE:60:0:60 RRA:AVERAGE:0.5:6:3600 \
+DS:UPD_ZNACHEN_2:GAUGE:60:0:60 RRA:AVERAGE:0.5:6:3600 \
+DS:UPD_ZNACHEN_3:GAUGE:60:0:60 RRA:AVERAGE:0.5:6:3600
+
+rrdtool create temper1.rrd --step 60 DS:UPD_ZNACHEN_1:GAUGE:60:0:60 RRA:AVERAGE:0.5:6:3600
+rrdtool create temper2.rrd --step 60 DS:UPD_ZNACHEN_2:GAUGE:60:0:60 RRA:AVERAGE:0.5:6:3600
+rrdtool create temper3.rrd --step 60 DS:UPD_ZNACHEN_3:GAUGE:60:0:60 RRA:AVERAGE:0.5:5:3600
+
+обнавляем эти базы и рисуем графики в одном (общем) файле
+#!/bin/bash
+cd /srv/rrd_test/
+
+UPD_ZNACHEN_1=`sensors |grep temp1: | cut -c 15-18`
+UPD_ZNACHEN_2=`sensors |grep temp2: | cut -c 15-18`
+UPD_ZNACHEN_3=`sensors |grep temp3: | cut -c 15-18`
+
+- если не поставить "-t", то работать не будет
+rrdtool update temper.rrd -t UPD_ZNACHEN_1 N:${UPD_ZNACHEN_1}
+rrdtool update temper.rrd -t UPD_ZNACHEN_2 N:${UPD_ZNACHEN_2}
+rrdtool update temper.rrd -t UPD_ZNACHEN_3 N:${UPD_ZNACHEN_3}
+
+rrdtool graph fan24.png  -x MINUTE:10:HOUR:1:HOUR:4:0:%X -s end-24h -w 1024 -h 500 -t nazvanie_verh --vertical-label temperature_ch  \
+DEF:UPD_ZNACHEN_1=temper.rrd:UPD_ZNACHEN_1:AVERAGE LINE1:UPD_ZNACHEN_1#00FF00:TEMP_1 \
+DEF:UPD_ZNACHEN_2=temper.rrd:UPD_ZNACHEN_2:AVERAGE LINE1:UPD_ZNACHEN_2#0000FF:TEMP_2 \
+DEF:UPD_ZNACHEN_3=temper.rrd:UPD_ZNACHEN_3:AVERAGE LINE1:UPD_ZNACHEN_3#FF0000:TEMP_3   2>>error.txt

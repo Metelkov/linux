@@ -1,0 +1,751 @@
+--SAMBA с авторизацией без домена--
+
+применять конфиги
+sudo smbcontrol all reload-config
+
+перезагружать samba
+sudo /etc/init.d/smbd restart
+sudo /etc/init.d/nmbd restart
+sudo systemctl restart nmbd
+sudo systemctl restart smbd
+-----------------------------------------------------
+sudo apt -y install samba 
+
+Проверяем версию, должна быть больше 4 
+smbd -V
+
+
+!//Это то же не обязательно. По факту это надо на клиенте. Проверять рекомендую в винде.
+установить smbclient
+smbclient - утилита для подключения к общедоступным папкам.
+Отобразить общедоступные ресурсы на удаленном хосте:
+smbclient -L ip_addr/hostname
+Посмотреть «шары» локально на стороне сервер
+smbclient -L 127.0.0.1
+Просмотреть папку vip под пользователем tatyana
+$ smbclient \\\\10.26.95.220\\vip -U tatyana
+
+создаем директории в которых будут размещены файлы, пока создадим только 2 директории
+mkdir -p /srv/samba/common
+mkdir -p /srv/samba/secure
+и еще одну, для пользователя
+mkdir -p /srv/samba/a.beltsev
+
+---------------------------------------
+для не доменной самбы нужно заводить пользователей в систему и включать их в группу (группу тоже нужно заводить)
+права на директорию (шару) тоже нужно давать руками!
+
+авторизация грубо = логин/пароль
+можно делать через группу
+valid user = @smbgrp
+можно сделать конкретному -> valid user = user
+можно смешанно -> valid user = @smbgrp, user1, user2
+разрешить запись, еще одна директива 
+write list = user3 
+если valid user и write list не определены, то по умолчанию можно всем
+
+adduser username - рекомендовано использовать
+adduser username newgroup - создать пользователя с группой
+
+useradd user  -  не создает домашний каталог я использую его
+
+Чтобы достичь почти того же результата с помощью низкоуровневой утилиты useradd, команда должна выглядеть примерно так:
+В опции -с могут быть удалены без проблем, то разделенный запятыми список, который следует будут добавлены комментарии к /etc/passwd.
+sudo useradd -d /home/test -m -s/bin/bash -c FullName,Phone,OtherInfo test && passwd test
+
+
+посмотреть id можно
+
+id user_login (andreyex например)
+uid=1000(andreyex) gid=1000(andreyex) groups=1000(andreyex),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),116(lpadmin),126(sambashare),127(kvm)
+
+
+изменить UID пользователя
+было несколько пользователей в вашей системе Linux. Вы должны были удалить пользователя, потому что он/она покинул организацию. Теперь вы хотите, чтобы его UID был занят другим пользователем, уже находящимся в системе.
+
+usermod -u 1004 user_2
+
+
+	просмотреть созданных пользователей
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+посмотреть пользователей заведенных в samba (с версии 3 и запускается только под root)
+pdbedit -L
+
+pdbedit -L -v
+Параметр включает расширенный формат вывода. Вынуждает pdbedit
+выводить список пользователей в расширенном формате.
+
+pdbedit -L -w
+Параметр включает формат вывода совместимый с форматом smbpasswd.
+Вынуждает pdbedit выводить список пользователей из базы в формате
+совместимом с форматом файла smbpasswd (более подробно смотрите smbpasswd(5)).
+
+https://smb-conf.ru/pdbedit-samba-user-account-management-tool.html
+
+
+
+удалить пользователя из samba
+удалить из samba и не забыть удалить из системы
+
+удалить пользователя john используя smbpasswd с ключом -x
+smbpasswd -x john
+
+потом удалить пользователя john из системы через userdel
+userdel -r john
+
+Приостановление учётной записи без удаления:
+smbpasswd -d
+
+Активация учетной записи пользователя:
+smbpasswd -e
+
+
+cat /etc/passwd
+
+Структура в приведенном выше выводе выглядит так:
+Имя пользователя
+Зашифрованный пароль ( x представляет сохраненный пароль)
+Идентификационный номер пользователя (UID)
+Идентификационный номер группы пользователя (GID)
+ФИО
+Домашний каталог пользователя
+Оболочка входа пользователя (по умолчанию – оболочка bash)
+
+
+только имена:
+sed 's/:.*//' /etc/passwd
+compgen -u
+cut -d: -f1 /etc/passwd
+getent passwd | awk -F: '{ print $1}'
+
+
+Проверьте, существует ли имя пользователя в системе
+Это может быть полезно, если вы хотите знать, существует ли конкретное имя пользователя в системе:
+getent passwd | grep user_name
+
+
+	группы
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+просмотреть группы:
+cat /etc/group
+
+создать группу
+groupadd test
+
+Управление группами Linux для пользователя выполняется с помощью команды usermod. Рассмотрим ее синтаксис и опции:
+$ usermod опции имя_пользователя
+-G - дополнительные группы, в которые нужно добавить пользователя
+-g изменить основную группу для пользователя
+-R удалить пользователя из группы.
+
+Добавить пользователя в группу можно командой usermod:
+usermod -G -a имя_группы имя_пользователя
+
+usermod -G -a my_group username
+
+Посмотреть группы linux, в которых состоит пользователь можно командой (просто перечисление групп):
+groups username
+
+тобы включить пользователя в группу Linux, для основной группы используется опция -g:
+usermod -g my_group username
+
+удалить группу Linux можно командой:
+delgroup my_group
+
+
+	права на папку
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+посмотреть владельца 
+ls -l
+drwxr-xr-x 2 root root  6 фев  9 15:36 a.beltsev
+d - Директория
+rwxr-xr-x - права (пользователь группа другие)
+2
+root - идет имя владельца файла (третья колонка)
+root - идет название группы (четвертая колонка)
+6 фев  9 15:36 
+a.beltsev - название лиректории
+
+chmod my_dir - изменить права на файл
+chmod my_dir -R - изменить права рекурсивно на файл
+
+chown - Для изменения владельца и группы файла или каталога
+chown имя_нового_владельца:имя_новой_группы имя_файла_или_директории
+
+Если хотим изменить только группу, то шаблон следующий:
+chown :имя_новой_группы имя_файла_или_директории
+
+Если хотим изменить только владельца, то шаблон следующий:
+chown имя_нового_владельца имя_файла_или_директории
+chown -R - рекурсивно
+
+
+	создать пользователя в самбе
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+создать пользователя -a
+smbpasswd -a a.beltsev
+
+посмотреть пользователей в файле
+tdbdump ./private/passdb.tdb
+
+----------------------------------------------------------------
+
+далее конфиг, для начала сделаем копию
+cp /etc/samba/smb.conf smb.conf.orig
+
+сам конфиг, чистый, рабочий будет отдельно, чтоб комментарии не мешали, позже приложу
+а пока объяснения:
+
+-----------------------------------------------------------
+[global]
+прописываем имя рабочий группы
+   workgroup = WORKGROUP
+
+подпись сервера
+   server string = %h server (Samba, Ubuntu)
+
+сервер работает самостоятельно, без домена
+   server role = standalone server
+
+выставляем кодировку (*nix должен быть в utf8)
+   unix charset = utf8
+
+кодировка, чтобы понимать windows
+   dos charset = cp1251
+
+отключим чувствительность к регистру чтобы User и user были одно и тоже
+   case sensitive = no
+
+предотвращает (отключаем) поиск NetBios через DNS
+Определяет будет ли демон nmbd(8) (в случае если WINS не смог разрешить NetBIOS имя) делать запрос к DNS.
+Обратите внимание: максимальная длина для NetBIOS имени 15 символов (ограничение на DNS имя).
+nmbd порождает вторую копию себя, чтобы сделать запросы к DNS
+   dns proxy = no
+
+??? не из за этого ли параметра у меня 2 лог файла, один имя компьютера, второй ip адрес
+!// Нет, скорей всего из-за криво работающего ДНС. И установка бинда не решит эту проблему. 
+!// Для того, что бы все нормально работало, НЕОБХОДИМО что бы правильно работал ДНС
+!// Правильно- это как минимум должны резолвиться все хосты по именам(а для этого DHCP должен сообщать ДНС имена и адреса)
+!// Вообще это непростая тема и она не имеет особого значения для ФС. Если есть Домен AD то каждый DC - DNS его и используй как днс для клиентов.
+!// В однноранговых сетях бывает работает NetBIOS. Но он может пораждать кашу и использовать его не надо.
+
+
+
+#Определяет какие будут использоваться интерфейсы, ограничить интерфейсы 
+;   interfaces = 127.0.0.0/8 eth0
+# Указывает что нужно строго использовать только интерфейсы указанные в "interfaces" - если строчка выше в конфиге включена
+;   bind interfaces only = yes
+
+
+Если вы поставили cups и не используете его (или не ставили вообще). Для предотвращения таких сообщений в конфиг samb’ы в секцию global пишем такое - отключаем функционал принт-сервера
+   load printers = no
+   show add printer wizard = no
+   #printing = none
+   printcap name = /dev/null
+   disable spoolss = yes
+   
+
+#### Debugging/Accounting ####
+путь куда складывать логи
+   log file = /var/log/samba/log.%m
+
+  debug timestamp = yes
+
+определяет максимальный размер файла логов в килобайтах, если размер превышен, то создается новый, а 
+к существующему добавляется расширение .old, "0" - без ограничения по размеру 
+   max log size = 10240
+
+log level 0- отключено логирование, log level 1- самый низкий,
+Можно указывать разный уровень для разных классов отладки, например:
+log level = 1 auth:10 winbind:5 passdb:4
+log level может быть 1 - 5
+Классы отладки могут быть: all, tdb, printdrivers, lanman, smb, rpc_parse, rpc_srv, rpc_cli, passdb, sam, auth, winbind, vfs, idmap, quota, acls, locking, msdfs, dmapi, registry.
+Для ведения логов активности пользователей более удобно указать vfs: log level = 0 vfs:2
+vfs objects = full_audit
+full_audit:prefix = %u|%I|%m|%S
+
+расшифровка параметров https://www.samba.org/samba/docs/current/man-html/smb.conf.5.html#FULL_AUDIT:PREFIX
+%u = username of the current service, if any.
+%I = the IP address of the client machine.
+Before 4.0.0 it could contain IPv4 mapped IPv6 addresses, now it only contains IPv4 or IPv6 addresses.
+%m = the NetBIOS name of the client machine (very useful).
+This parameter is not available when Samba listens on port 445, as clients no longer send this information. If you use this macro in an include statement on a domain that has a Samba domain controller be sure to set in the [global] section smb ports = 139. This will cause Samba to not listen on port 445 and will permit include functionality to function as it did with Samba 2.x.
+%S = the name of the current service, if any.
+
+full_audit:failure = none
+full_audit:success = mkdir rmdir open read pread write pwrite sendfile rename unlink lock
+full_audit:facility = local5
+full_audit:priority = debug
+После этого логи будут писаться в /var/log/syslog, чтобы писались в отдельный файл, добавим в конфигурации syslog:
+local5.debug /var/log/samba/audit.log
+в некотором случае выставить level = 3
+
+чтобы не писать лог файловых операций в syslog и длшировать каждую шару и пользователя
+https://kurazhov.ru/samba-audit/
+чтобы логировать каждый созданный ресурс [common] например, то в каждом этом ресурсе нужно прописывать аудит, а в 
+[global] это не прописывать
+получаем в каждой шаре:
+log level = 0 vfs:2
+full_audit:prefix =  |%u|%I|%m|%S|%a  # - эти параметры есть выше
+full_audit:success = connect, open, mkdir, rmdir, unlink, write, rename
+full_audit:failure = connect, open, mkdir, rmdir, unlink, write, rename
+full_audit:facility = local5 # - это именованый канал в syslog, имя должно быть уникальным! Можно называть local5, local6, local7 и т.д.
+full_audit:priority = notice
+vfs objects = full_audit
+
+local5.debug /var/log/samba/beltsev.log
+syslog only = no
+syslog = 0
+
+чтобы в syslog не валилось - нужно его изменить:
+Отредактировать файл /etc/rsyslog.d/50-default.conf, заменив строку
+*.*;auth,authpriv.none            -/var/log/syslog  ----- так было
+*.*;local5,local6,local7,auth,authpriv.none            -/var/log/syslog  ------- должно стать
+
+Создать файл /etc/rsyslog.d/00-samba-audit.conf с содержимым
+
+local5.notice /var/log/samba/auditShare5.log
+local6.notice /var/log/samba/auditShare6.log
+local7.notice /var/log/samba/auditShare7.log
+где local5, local6, local7 — названия потоков данных, которые должны попадать в файлы логов аудита.
+
+Настройка ротации логов:
+В /etc/logrotate.d/samba дописать для каждой шары:
+/var/log/samba/auditShare5.log {
+    weekly
+    missingok
+    rotate 7
+    postrotate
+         reload rsyslog > /dev/null 2>&1 || true
+    endscript
+    compress
+    notifempty
+}
+
+ополнительные настройки
+Создать файлы логов аудита для каждой логируемой шары и дать каждому права на запись для пользователя syslog
+
+touch auditShare5.log && chown syslog. auditShare5.log
+6. Перезапустить службы
+
+systemctl restart smbd rsyslog
+В общем-то и всё. Потоки логов должны начать наполнять файлы.
+
+
+!//Если честно не совсем понял что в этой части у тебя происходит, все смешалось.
+!//Все что тебе надо от логов я тебе написал в свем конфиге.
+!//надо делать или файл или сислог(его надо будет делать когда будешь делать аудит, т.к. сислог легко направить на анализатор).
+!// Но! надо сначала разобраться с сислогом.
+??? вот тут с local5.debug почему после него если ставить равно то будет ошибка, а если ничего не ставить,
+??? то все работает и vfs - это для виртуального сервера, а не на прямую который на железке поднят
+
+
+   log level = 1
+   logging = file
+
+Записывать ли логи в системный журнал syslog
+#   syslog only = no
+Уровень логов которые будут писаться в системный журнал syslog (0 - LOG_ERR, 1 - LOG_WARNING, 2 - LOG_NOTICE, 3 - LOG_INFO)
+   syslog = 0
+
+??? считается что этот параметр устарел и его нужно исключить и вообще использовать logging
+!// Это то же что-то лишнее, поставь мониторинг и забудь про костыли
+# Do something sensible when Samba crashes: mail the admin a backtrace
+   panic action = /usr/share/samba/panic-action %d
+
+####### Authentication #######
+Механизм хранения информации о пользователях (smbpasswd, tdbsam, ldapsam)
+Этот параметр позволяет администратору выбрать механизм для хранения информации о пользователях и, возможно, о группах. Это позволяет Вам переключаться между механизмами без переустановки Samba. Значение параметра делится на две части, имя механизма и местонахождение, строка, которая означает, что механизм имеет отношение только к указанной зоне. Они разделяются знаком “:”.
+Доступные механизмы включают :
+* smbpasswd — Механизм по умолчанию. Необязательным параметром указывается путь к файлу smbpasswd.
+* tdbsam — Механизм, основанный на TDB. Необязательным параметром указывается путь к TDB (по умолчанию файл passdb.tdb ищется в директории private dir).
+* ldapsam — Механизм, основанный на LDAP. Необязательным параметром указывается ссылка на LDAP (по умолчанию ldap://localhost)
+Значение по умолчанию: passdb backend = smbpasswd
+Примеры : passdb backend = tdbsam:/etc/samba/private/passdb.tdb
+или несколько серверов при использовании библиотеки OpenLDAP :
+passdb backend = ldapsam:"ldap://ldap-1.example.com ldap://ldap-2.example.com"
+или несколько серверов при использовании библиотеки Netscape LDAP :
+passdb backend = ldapsam:"ldap://ldap-1.example.com ldap-2.example.com"
+
+   passdb backend = tdbsam
+
+нужно прописать путь до файла (в некотором случае создать директорию)
+ passdb backend = tdbsam:/etc/samba/private/passdb.tdb
+
+
+
+Добавление пользователя в самбу:
+Добавление пользователя в файл smbpasswd
+smbpasswd -a Имя_Пользователя
+New SMB password:
+Retype new SMB password:
+Added user Имя_Пользователя.
+
+Мы сначала добавляем пользователя Имя_Пользователя, используя для этого флаг -a. Этот пользователь должен существовать в локальной системе,
+в противном случае выполнение команды завершится с ошибкой.
+
+
+
+!//Используй по умолчанию(т.е. без указания директивы). По умолчанию - Юзер
+Доступ к ресурсам осуществляется по: user - имени пользователя и паролю, share - паролю, server - переадресация 
+проверки на другой сервер (если не получится будет использоваться "security = user", domain - имитация работы сервера домена Windows
+#  security = user
+я в конфиге испоьзую по умолчанию
+
+
+Шифрование передающихся между клиентом и сервером паролей
+   encrypt passwords = true
+!// Это можно не писать, параметр depredecated(в будущих версиях будет удален). По умолчанию включено
+
+
+Cинхронизация пароля UNIX с паролем SMB (с БД SMB) при изменении зашифрованного пароля SMB в файле smbpasswd
+   unix password sync = yes
+
+
+# For Unix password sync to work on a Debian GNU/Linux system, the following
+# parameters must be set (thanks to Ian Kahan <<kahan@informatik.tu-muenchen.de> for
+# sending the correct chat script for the passwd program in Debian Sarge).
+Программа которая будет использоваться для смены паролей UNIX
+   passwd program = /usr/bin/passwd %u
+
+Строка управляющая обменом “chat” между демоном smbd и программой смены паролей - что будет выводить при смене пароля
+   passwd chat = *Enter\snew\s*\spassword:* %n\n *Retype\snew\s*\spassword:* %n\n *password\supdated\ssuccessfully* .
+
+
+# (Never - запросы с неправильным паролем отклоняются; Bad User - запросы с неправильным паролем отклоняются, но если имя пользователя существует, будет произведена попытка входа гостем; Bad Password - запросы с неправильным паролем обрабатываются как попытка зайти гостем; Bad Uid - в режиме security = domain/ads когда пользователь прошел аутентификацию, но не имеет учетной записи UNIX будет считаться гостем.
+   map to guest = bad user
+
+разрешить доступ только из этой подсети
+   hosts allow = 172.18.148.
+
+этот раздел просто чтобы был, для win9х устарел, его пропустить
+########## Domains ###########
+# Поддержка службы входа в сеть для Windows 9X
+;   domain logons = yes
+# Путь к директории где будут хранится пользовательские профили (Application Data, Рабочий стол, NTuser.dat, ...)
+;   logon path = \\%N\profiles\%U
+#   logon path = \\%N\%U\profile
+# Путь присоединения домашней директории для рабочих станций Windows NT
+;   logon drive = H:
+# Домашняя директория при авторизации клиента
+#   logon home = \\%N\%U
+# Файл сценария, который будет скачан и выполнен на клиентском компьютере при входе в систему.
+;   logon script = logon.cmd
+# Путь к сценарию, который будет выполнен демоном smbd от пользователя root при обстоятельствах описанных ниже
+; add user script = /usr/sbin/adduser --quiet --disabled-password --gecos "" %u
+# Путь к сценарию который запускается при добавлении учетной записи компьютера в домен SAMBA
+; add machine script  = /usr/sbin/useradd -g machines -c "%u machine account" -d /var/lib/samba -s /bin/false %u
+# Путь к сценарию который запускается от root пользователя smbd при создании новай группы
+; add group script = /usr/sbin/addgroup --force-badname %g
+########## end Domains ###########
+
+
+этот раздел тоже можно пропустить, для отладки разрешить на время всем подключаться на общий ресурс
+но потом все опасное запретить
+############ Misc ############
+# Присоединение и обработка другого конфигурационного файла
+;   include = /home/samba/etc/smb.conf.%m
+!!! Это тюнинг производительности, делается когда все работает. Почему SO_RCVBUF=8192?? почему не 13000?
+#         SO_RCVBUF=8192 SO_SNDBUF=8192
+!!!! аналогично
+# Параметры сокета для обслуживания клиентов
+#   socket options = TCP_NODELAY
+!! Все что ниже - для домена.
+# Команда выполняющаяся при получении сервером сообщения WinPopup
+;   message command = /bin/sh -c '/usr/bin/linpopup "%f" "%m" %s; rm %s' &
+# Сопоставление списка просмотра сети. Мастер браузеры в изолированных подсетях передадут свои локальные списки 
+просмотра и запросят законченную копию списка для всей глобальной сети.
+#   domain master = auto
+# Диапазон пользовательских идентификаторов для сопоставления SIDов UNIX пользователей SIDам NT пользователей.
+;   idmap uid = 10000-20000
+# Диапазон групповых идентификаторов для сопоставления SIDов UNIX групп SIDам NT групп
+;   idmap gid = 10000-20000
+;   template shell = /bin/bash
+;   winbind enum groups = yes
+;   winbind enum users = yes
+;   usershare max shares = 100
+# Разрешить не аутентифицированным пользователям получить доступ к общим ресурсам пользователей
+#   usershare allow guests = yes
+
+
+этот раздел для принт сервера тоже не нужне - пропустить
+########## Printing ##########
+# Отображение всех принтеров
+#   load printers = yes
+# Определяет какая статусная информация о принтере будет интерпретироваться в системе.
+;   printing = bsd
+# Переопределение вкомпилированного printcap name
+;   printcap name = /etc/printcap
+;   printing = cups
+;   printcap name = cups
+########## end Printing ##########  
+
+#======================= Share Definitions =======================
+# Un-comment the following (and tweak the other settings below to suit)
+# to enable the default home directory shares. This will share each
+# user's home directory as \\server\username
+
+
+как будет отображаться папка на клиенте, даже если на сервере она названа по другому - писать в этих скобочках
+[public]
+
+комментарий к папке
+    comment = Public Share
+    path = /srv/samba/common
+
+Общий ресурс отображаться в списке доступных общих ресурсов в сетевом окружении и в списке просмотра. Директория видна, ресурс не скрытый,
+но если нет авторизации - туда не зати
+    browsable = yes
+
+
+Не требовать для подключения пароль. Все эти параметры влияют исключительно на эту шару. Глобальны патаметры в глобале.
+Разрешать гостю вход
+    guest ok = yes
+
+Запрет на изменение и создание файлов
+    read only = no
+
+Права доступа для создаваемого файла
+    create mask = 0775
+
+Права доступа для создаваемой директории
+    directory mask = 0775
+!!! Пользователи которыми манипулирует самба ВСЕГДА или замаплены(как в случае с доменом) или должны быть локально.
+В винде то же самое, создай папку на винде и расшарь ее. ты сможешь указывать только локальных пользователей(если винда не доменная)
+Ты не можешь использовать каких-то других пользователей. другие - все остальные(см. POSIX права  в линуксе(владелец:группа:все остальные)
+Настраивать права придется с CLI, манипулировать получится только POSIX.
+
+
+Список пользователей, которым разрешен доступ
+   valid users = a.beltsev, @my_group
+
+@my_group @ - означает группа, my_group - так эта группа называется. Это просто локальная группа, кто в ней есть тому и можно
+
+    force user = nobody
+    force group = nogroup
+даже при анонимном доступе пользователь должен быть, поэтому тех кто заходит без ввода пользователя мы считаем пользователем nobody(группу соответственно nogroup)
+как я понял нужно прописывать пользователя который будет высвечиваться в логах (от его имени) даже если подключился другой (например
+если другой разрешен грцппой или анонимус, но это не точно)
+    force user = a.beltsev
+
+  Это имя пользователя будет использоваться только для установленных соединений. Таким образом, клиенту все еще необходимо подключиться как пользователь и предоставить действительный пароль. При подключении, все операции с файлами будут выполняться от «forced user», независимо от того под каким именем подключился пользователь. Это очень полезно. В Samba 2.0.5 и выше установка этого параметра также приводит к смене первичной группы пользователей к force user, которые будут использоваться в качестве первичной группы для всех файлов.
+  Это определяет имя группы UNIX, которое будет назначено как первичная группа по умолчанию для всех пользователей, соединяющихся с этим сервисом.
+Это полезно для того, чтобы совместно использовать файлы, гарантируя, что весь доступ к файлам этого сервиса будет использовать названную группу для проверки их разрешений. Таким образом, назначая разрешения для этой группы к файлам и каталогам в пределах этого сервиса администратор Samba может ограничить или позволить совместно использовать эти файлы.
+  В Самбе 2.0.5 и выше были расширены функциональные возможности этого параметра следующим способом. Если имя группы в этом параметре имеет символ ‘+’ перед именем группы, то текущий пользователь, обращающийся к общему ресурсу имеет только первичное значение по умолчанию группы, назначенное на эту группу. Это позволяет администратору решать, что только пользователи, которые уже находятся в специфической группе, создадут файлы с монопольным использованием группы, установленным на эту группу. Это дает более тонкую степень детализации назначения монопольного использования.
+Например, force group = +sys означает, что только пользователи, которые находятся в группе sys, будут иметь заданную по умолчанию первичную группу sys при доступе к этому общему ресурсу Samba. Все другие пользователи сохранят их обычную первичную группу. Если параметр force user также установлен, то группа установленная в force group отменит установку primary group в force user.
+
+
+этот параметр должен разрешить запись в директорию
+    writable = yes
+
+##########################################
+ НЕ использовать для бездоменной самбы
+[netlogon]  [profiles] нужды для домена
+;[netlogon]
+;   comment = Network Logon Service
+;   path = /home/samba/netlogon
+
+;[profiles]
+;   comment = Users profiles
+;   path = /home/samba/profiles
+;   guest ok = no
+;   browseable = no
+;   create mask = 0600
+;   directory mask = 0700
+??? [netlogon] и [profiles] отличаются по параметрам, первый меньше, как я понимаю он просто отобразит 
+??? директорию и не пустит туда никого
+##########################################
+
+
+пример шары:
+[secure]
+comment = Secure File Server Share
+path = /srv/samba/secure
+valid users = @smbgrp
+guest ok = no
+writable = yes
+browsable = yes
+
+############# принтера мы не используем, можно не писать ############
+[printers]
+   comment = All Printers
+   browseable = no
+   path = /var/spool/samba
+   printable = yes
+   guest ok = no
+   read only = yes
+   create mask = 0700
+[print$]
+   comment = Printer Drivers
+   path = /var/lib/samba/printers
+   browseable = yes
+   read only = yes
+   guest ok = no
+;   write list = root, @lpadmin
+###############################################
+
+############# cdrom не используем, можно не писать ############
+;[cdrom]
+;   comment = Samba server's CD-ROM
+;   read only = yes
+;   locking = no
+;   path = /cdrom
+;   guest ok = yes
+###############################################
+
+
+тут ограничения на подключения - Разрешает только указанными IP адресам присоединяться к Samba-серверу, 
+по умолчанию всем разрешено, можно не ограничивать - закомментировать строку, а ограничить фаерволом, например iptables
+hosts allow = 172.16. 192.168.1. 192.168.0. 127. 10.
+??? я так понимаю при авторизации по паролю мне это не очень нужно
+!!!ДА
+
+
+проверка:
+testparm -s
+
+
+		готовый конфиг
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(но, сначала заводим пользователя в стстеме, включаем его в группу, даем права на папку (папка должна принадлежать
+пользователю и/или группе) и smbpasswd -a user заводим пользователя в самбе, имя и пароль должны совпадать с системой)
+useradd s.gryaznov
+passwd s.gryaznov
+mkdir /srv/samba/s.gryaznov
+chown s.gryaznov:s.gryaznov /srv/samba/s.gryaznov/
+root@nfs:/home/metelkov# smbpasswd -a s.gryaznov
+root@nfs:/home/metelkov# nano /etc/samba/smb.conf - в конфие создаем шару для пользователя
+root@nfs:/home/metelkov# /etc/init.d/smbd restart
+root@nfs:/home/metelkov# /etc/init.d/nmbd restart
+
+----------------------------------------------------
+
+#
+# Sample configuration file for the Samba suite for Debian GNU/Linux.
+# ubuntu 20
+#======================= Global Settings =======================
+
+[global]
+
+   workgroup = WORKGROUP
+   server string = %h server (Samba, Ubuntu)
+   server role = standalone server
+   unix charset = utf8
+   dos charset = cp1251
+   case sensitive = no
+   dns proxy = no
+   load printers = no
+   show add printer wizard = no
+   printcap name = /dev/null
+   disable spoolss = yes
+
+
+#### Debugging/Accounting ####
+   log file = /var/log/samba/log.%m
+   max log size = 10240
+   log level = 5
+   logging = file
+   debug timestamp = yes
+   panic action = /usr/share/samba/panic-action %d
+
+####### Authentication #######
+#  passdb backend = tdbsam
+   passdb backend = tdbsam:/etc/samba/private/passdb.tdb
+   unix password sync = yes
+   hosts allow = 172.18.148.
+
+# For Unix password sync to work on a Debian GNU/Linux system, the following
+# parameters must be set (thanks to Ian Kahan <<kahan@informatik.tu-muenchen.de> for
+# sending the correct chat script for the passwd program in Debian Sarge).
+   passwd program = /usr/bin/passwd %u
+   passwd chat = *Enter\snew\s*\spassword:* %n\n *Retype\snew\s*\spassword:* %n\n *password\supdated\ssuccessfully* .
+
+   map to guest = bad user
+
+############ Misc ############
+#   usershare allow guests = yes
+
+#======================= Share Definitions =======================
+
+# Un-comment the following (and tweak the other settings below to suit)
+# to enable the default home directory shares. This will share each
+# user's home directory as \\server\username
+[public]
+    comment = Public Share
+    path = /srv/samba/common
+    browsable = yes
+    guest ok = yes
+    read only = no
+    create mask = 0775
+    directory mask = 0775
+#    force user = nobody
+#    force group = nogroup
+    writable = yes
+#    valid group = @allsamba
+[a.beltsev]
+    comment = a.beltsev folder
+    path = /srv/samba/a.beltsev
+    browsable = yes
+    guest ok = no
+    read only = no
+    create mask = 0775
+    directory mask = 0775
+#    force user = nobody
+#    force group = nogroup
+#    force user = a.beltsev
+#    force group = a.beltsev
+    writable = yes
+    valid users = a.beltsev
+    write list =  a.beltsev
+
+
+[t.frolova]
+    comment =  folder
+    path = /srv/samba/t.frolova
+    browsable = yes
+    guest ok = no
+    read only = no
+    create mask = 0775
+    directory mask = 0775
+#    force user = nobody
+#    force group = nogroup
+#    force user = t.frolova
+#    force group = t.frolova
+    writable = yes
+    valid users = t.frolova
+    write list =  t.frolova
+
+
+
+[s.gryaznov]
+    comment = s.gryaznov folder
+    path = /srv/samba/s.gryaznov
+    browsable = yes
+    guest ok = no
+    read only = no
+    create mask = 0775
+    directory mask = 0775
+#    force user = nobody
+#    force group = nogroup
+#    force user = s.gryaznov
+#    force group = s.gryaznov
+    writable = yes
+    valid users = s.gryaznov
+    write list = s.gryaznov
+
+
+
+[secure]
+comment = Secure File Server Share
+path = /srv/samba/secure
+valid users = @smbgrp, @t.frolova
+guest ok = no
+writable = yes
+browsable = yes
+
+[test_non_config]
+comment = test folder
+path = /srv/samba/test_non_config
+
+guest ok = no
+browsable = no

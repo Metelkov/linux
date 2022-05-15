@@ -1,0 +1,191 @@
+DNS
+https://obu4alka.ru/install-dns-server.html
+
+Установка DNS сервера
+В качестве DNS сервера будем использовать пакет bind9. Для его установки подключаемся к серверу по ssh или открываем консоль на самом сервере и набираем следующую команду:
+
+sudo apt update && sudo apt dist-upgrade -y
+sudo apt install bind9 -y
+
+После установки пакета bind9, необходимо произвести его настройку.
+
+Настройка DNS сервера bind9
+
+Для начала отредактируем файл named.conf.options
+sudo nano /etc/bind/named.conf.options
+
+Добавим в него следующий код:
+
+options {
+  directory "/var/cache/bind";
+# с каких сетей или  IP адресов будут обслуживаться запросы нашим DNS сервером.
+  listen-on { 
+      80.81.82.83/32; # наш внешний ip адрес
+      10.5.5.0/24; # наша локальная сеть.
+      127.0.0.0/8; # ip адрес локальной петли (lo интерфейс)
+  };
+# вышестоящий dns сервер, используется если URL запроса не найден в нашей базе.
+  forwarders { 
+      77.88.8.1; 
+      8.8.8.8; 
+  };
+# Запросы DNSSEC
+  dnssec-validation auto;
+# Запросы NXDOMAIN
+  auth-nxdomain no;
+# с каких сетей или  IPv6 адресов будут обслуживаться запросы нашим DNS сервером
+  listen-on-v6 { all; };
+# Прописываем версию DNS - для защиты от любопытных
+  version "DNS server v1.0";
+};
+
+Теперь открываем файл конфигурации зон и вносим информацию о наших зонах.
+
+sudo nano /etc/bind/named.conf.local
+
+ // зона прямого просмотра
+zone "lan" {
+  type master; 
+  file "/var/lib/bind/db.lan";
+  };
+// зона обратного просмотра
+zone "5.5.10.in-addr.arpa" {  
+  type master; 
+  file "/var/lib/bind/db.revers.lan";
+  };
+
+Сохраняем ctrl+o, закрываем ctrl+x.
+
+Зона прямого просмотра
+Теперь самое время создать зону прямого просмотра, для этого создадим копию файл db.local:
+
+sudo cp /etc/bind/db.local /var/lib/bind/db.lan
+
+Откроем файл db.lan:
+
+sudo nano /var/lib/bind/db.lan
+
+и приведем его к следующему виду:
+
+$ORIGIN .
+$TTL 14400  
+lan  IN  SOA  ns1.lan.  root.ns1.lan. (
+            2020040501 ; serial 
+            604800     ; refresh
+            86400      ; retry
+            2419200    ; expire
+            604800     ; minimum
+            )
+         NS ns1.lan.
+         A  10.5.5.1
+$ORIGIN lan.
+$TTL 14400
+ns1      A  10.5.5.1
+test     A  10.5.5.100
+
+Записи вида А — предназначена для ip адресов версии 4
+Запись вида АААА — предназначена для ip адресов версии 6
+Запись вида NS — для DNS серверов.
+
+
+Настройка зоны обратного просмотра DNS
+
+Обратная зона преобразовывает IP адреса машины в доменное имя FQDN. Давайте сделаем копию файла прямого просмотра:
+
+sudo cp /var/lib/bind/db.lan /var/lib/bind/db.revers.lan
+
+Открываем его на редактирование:
+
+sudo nano /var/lib/bind/db.revers.lan
+
+Вносим следующие изменения:
+
+$TTL 14400  
+@  IN  SOA  ns1.lan.  root.ns1.lan. (
+            2020040501 ; serial 
+            604800     ; refresh
+            86400      ; retry
+            2419200    ; expire
+            604800     ; minimum
+            )
+         NS   ns1.lan.
+1        PTR  ns1.lan.
+100      PTR  test.lan.
+
+
+Настройка сетевого интерфейса
+Давайте присвоим нашему второму интерфейсу IP-адрес 10.5.5.1, для этого пропишем следующее:
+
+sudo ip addr add 10.5.5.1/24 dev enp3s0
+
+enp3s0 — имя второго сетевого интерфейса (для просмотра набираем команду ifconfig)
+
+
+Проверка DNS сервера bind9
+Теперь проверим правильность синтаксиса конфигурационных файлов BIND.
+
+sudo named-checkconf
+
+Если конфигурационные файлы не содержат ошибок, вывод этой программы будет пуст.
+
+Перезагружаем bind9:
+
+sudo /etc/init.d/bind9 restart
+
+
+Настройка resolv.conf
+
+Теперь откроем и отредактируем файл resolv.conf
+
+sudo nano /etc/resolv.conf
+
+В этом файле необходимо удалить все и прописать следующие строки
+
+nameserver 10.5.5.1
+nameserver 8.8.8.8
+search lan 
+
+Теперь можно проверить работу DNS сервера:
+
+nslookup ns1.lan
+
+в ответ вы должны увидеть:
+
+Server:     10.5.5.1
+Address:    10.5.5.1#53
+Non-authoritative answer:
+Name:    ns1.lan
+Address: 10.5.5.1
+
+
+Как видите зона прямого просмотра работает, сервер выдал ip адрес проверяемого имени.
+
+Теперь проверим работу зоны обратного просмотра
+
+nslookup 10.5.5.1
+
+В ответ должны получить:
+
+Server:     10.5.5.1
+Address:    10.5.5.1#53
+Non-authoritative answer:
+1.5.5.10.in-addr.arpa    name = ns1.lan.
+Authoritative answers can be found from:
+
+Как видим в ответ мы получили имя сервера по его IP адресу. Если у вас в ответ на nslookup так же все корректно отображается, значит вы все сделали правильно! Если нет, то проверяйте что сделали не так.
+
+
+Проверяем версию DNS сервера
+dig @ns1.lan version.bind chaos txt
+
+Примерный вывод команды:
+
+...
+ ;; ANSWER SECTION:
+ version.bind.        0   CH  TXT "DNS server v1.0"
+...
+ ;; Query time: 0 msec
+ ;; SERVER: 10.5.5.1#53(10.5.5.1)
+
+
+Вот и всё, установка и настройка сервера DNS на этом закончена.
