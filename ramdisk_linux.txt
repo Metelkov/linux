@@ -1,0 +1,49 @@
+http://sysadm.pp.ua/linux/ram-and-tmp-fs.html
+http://mydebianblog.blogspot.com/2010/03/ramdisk-linux.htmlhttps://www.k-max.name/linux/ramdisk-ramfs-tmpfs-in-linux/
+ 
+TMPSF создана для RAM дисков, тут не тестировалась на скорость
+самый современный
+1.Раздел tmpfs можно ограничить по размеру,
+2.tmpfs при нехватке основной памяти научился использовать swap раздел.
+3.Если размер рамдиска не указан явно, то диск монтируется в половину размера ОЗУ.
+
+mount -t tmpfs tmpfs /mnt/tmpfs/ -o size=100M
+
+mkdir /mnt/cache
+chmod 777 /mnt/cache
+mount -t tmpfs -o size=1024M tmpfs /mnt/cache
+где 1024M – это и  есть размер RAMdisk в Мегабайтах.
+
+Если же вы хотите изменить размер ramdisk – это просто:
+mount -o remount -o size=2048M /cache
+
+
+RAMSF создана для RAM дисков, тут не тестировалась на скорость
+
+быстрые файловые системы:
+
+F2FS - fs от samsung для рабобты с/на flash
+HFS+ - fs от macOS
+XFS - fs от san - 64бит
+
+рейтинг с RAMDISK на HDD
+F2FS
+HFS+
+XFS
+
+рейтинг с RAMDISK на SSD
+XFS
+HFS+
+exFAT
+F2FS
+
+рейтинг с HDD на RAMDISK 
+XFS
+FAT32
+HFS+
+F2FS
+
+рейтинг с SSD на RAMDISK
+XFS
+BTRFS
+F2FS

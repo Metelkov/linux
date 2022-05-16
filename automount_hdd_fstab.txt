@@ -1,0 +1,49 @@
+Автомонтрование подключаемых дисков и LVM (кратко)
+
+
+монтируем LVM, так же можно и другие блочные устройства (hdd):
+создаем директорию куда будем монтировать  mkdir -p /mnt/backup
+даем ей права chmod 777 /mnt/backup 
+нужно прописать в fstab строчку для автоматического монтирования lvm — для начала смотрим идентификатор
+
+blkid
+/dev/sdb1: UUID="6eLRc0-ZsAZ-ANKi-pPKg-hGRV-q0eY-zMcHDX" TYPE="LVM2_member" PARTUUID="00017060-01"
+/dev/sdc1: UUID="f4f0dd7c-0603-4c5b-8566-f5fc1100a557" TYPE="ext4" PTTYPE="dos" PARTUUID="00024c52-01"
+/dev/sdc2: UUID="26406f24-04ab-4044-b5b9-7eb22e089c0c" TYPE="ext4" PARTUUID="00024c52-02"
+/dev/sdc3: UUID="9a623777-c473-41f5-945e-1987e49581e1" TYPE="ext4" PARTUUID="00024c52-03"
+/dev/sdc4: UUID="bfa403a4-5769-4b1b-acf6-48e0c52eb8d7" TYPE="swap" PARTUUID="00024c52-04"
+/dev/sr0: UUID="2017-07-19-16-46-54-00" LABEL="openSUSE-Leap-42.3-DVD-x86_64033" TYPE="iso9660" PTUUID="1b681c50" PTTYPE="dos"
+/dev/sda1: UUID="VipY6S-QcOq-oR5U-UgaU-yz9g-XSWg-JsY7I1" TYPE="LVM2_member" PARTUUID="000686d1-01"
+/dev/mapper/backupdisks-copysdisk: LABEL="backup" UUID="38B56B6D63415A3D" TYPE="ntfs"
+
+нам нужен последний
+/dev/mapper/backupdisks-copysdisk: LABEL="backup" UUID="38B56B6D63415A3D" TYPE="ntfs"
+
+редактируем fstab
+nano /etc/fstab
+строки есть изначально:
+UUID=bfa403a4-5769-4b1b-acf6-48e0c52eb8d7 swap                 swap       defaults              0 0
+UUID=f4f0dd7c-0603-4c5b-8566-f5fc1100a557 /                    ext4       acl,user_xattr        1 1
+UUID=26406f24-04ab-4044-b5b9-7eb22e089c0c /home                ext4       acl,user_xattr        1 2
+UUID=9a623777-c473-41f5-945e-1987e49581e1 /var                 ext4       acl,user_xattr        1 2
+
+мы дописываем свою:
+UUID=38B56B6D63415A3D /mnt/backup    ntfs         defaults       0 0
+
+UUID=38B56B6D63415A3D — идентификатор диска
+/mnt/backup — куда подмонтируем нашlvm
+ntfs — файловая система на LVM
+defaults — пойии монтирования файловой системы, другие не подошли
+0 0 — первый делать или нет резервную копию, второй порядок проверки раздела 0 не проверять, 1 устанавливается для корня, 2 для остальных разделов
+
+после перезагрузки — проверить lsblk
+раздел должен быть подмонтирован в нашу папку /mnt/backup
+
+linux:/home/script_backup # lsblk
+NAME                      MAJ:MIN RM   SIZE RO TYPE MOUNTPOINT
+sda                         8:0    0   1.8T  0 disk
+└─sda1                      8:1    0   1.8T  0 part
+  └─backupdisks-copysdisk 254:0    0   3.7T  0 lvm  /mnt/backup
+sdb                         8:16   0   1.8T  0 disk
+└─sdb1                      8:17   0   1.8T  0 part
+  └─backupdisks-copysdisk 254:0    0   3.7T  0 lvm  /mnt/backup

@@ -1,0 +1,13 @@
+xwd | xwdtopnm | pnmtopng > 1.png
+
+need install
+ubuntu  --   apt-get install x11-apps
+centos  --   yum install xorg-xwd
+
+
+
+
+import -window root 2.png
+
+need install
+ubuntu  -- sudo apt install imagemagick

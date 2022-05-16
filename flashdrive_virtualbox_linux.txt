@@ -1,0 +1,44 @@
+1. Итак, для начала добавьте себя в группу virtualbox.Для этого запустите sudo gedit /etc/group и найдите строку vboxusers:x:121: и допишите туда своё имя пользователя.
+2. После чего напишите в терминале getent group vboxusers и вы увидите в выдаче что-то по типу такого vboxusers:x:121:user если вы в предыдущем шаге правильно добавили пользователя в группу, то после трехзначного числа будет ваш логин, в моем случае user. Из это строчки нам необходимо запомнить gid это трехзначное число, в моем случае это 123, я его выделил специально жирным шрифтом, у вас может быть другое совсем число. Внимание: запомните это число, оно нам пригодиться для следующего шага.
+3. Открываем в текстовом редакторе fstab: sudo gedit /etc/fstab и вставляем туда строчку: none /sys/bus/usb/drivers usbfs (sysfs - с usbfs может не работать) devgid=XXX,devmode=666 0 0 где XXX, тот самый qid, который мы запоминали в предыдущем шаге. Сохраните изменения и перезагрузите компьютер.
+4. После перезагрузки запустите Virtualbox и зайдите в свойства вашей виртуальной машины. Переместитесь в раздел USB и там отметьте галочками опции "включить USB" и "включить USB 2.0
+
+
+**************************
+
+Create a group called usbusers
+Add yourself to this group
+Edit the file /etc/udev/rules.d/40-permissions.rules (for this, you must have administrative privileges)
+3.1 Search for the following lines
+
+# USB devices (usbfs replacement)
+SUBSYSTEM=="usb_device",                    MODE="0664"
+3.2 Change them to the following
+
+# USB devices (usbfs replacement)
+SUBSYSTEM=="usb_device", GROUP="usbusers", MODE="0664"
+Restart your PC
+
+*******************
+
+Higher-security file system permissions configuration
+Add your user in virtualbox group:
+
+# usermod -aG vboxusers user
+Determine the UUID of the targeted disk.
+
+# udevadm info /dev/sdb | grep UUID
+Example of output:
+
+E: ID_PART_TABLE_UUID=01234567-89ab-cdef-0123-456789abcde
+Create an udev rule with the found UUID:
+
+/etc/udev/rules.d/99-vbox.rules
+# Rules to give VirtualBox users raw access to Windows disk
+
+# sdb
+ENV{ID_PART_ENTRY_TYPE}=="1234567-89ab-cdef-0123-456789abcde", GROUP="vboxusers"
+Lower-security file system permissions configuration
+To be able to add the vmdk file in Virtualbox Virtual Media Manager without running VirtualBox as root, the user need to be in vboxusers and disk groups.
+
+# usermod -aG disk,vboxusers user

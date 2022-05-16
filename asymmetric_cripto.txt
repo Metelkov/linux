@@ -1,0 +1,23 @@
+криптография asymmetric cryptography (private key - publik key)
+
+message.txt - шифруем его
+
+создаем ключ:
+ssh-keygen -t rsa -b 4096 -m PEM -f cryptokey
+-t rsa тип ключа rsa
+-b 4096 размер ключа (сложность вскрытия)
+-m PEM cryptokey - называем файл ключа
+
+после создаются 2 ключа cryptokey - privatkey (никому не даем) и cryptokey.pub - публичный ключ - всем даем
+
+для шифрования openssl нужно приват ключ конвертировать в openssl
+ssh-keygen -f cryptokey.pub -e -m PKCS8 > cryptokey.public
+
+-f cryptokey.pub какой файл хотим переконвертировать
+cryptokey.public переконвертированный ключ который поймет openssl
+
+шифруем:
+openssl rsautl -encrypt -pubin inkey cryptokey.public -in message.txt -out encryptedmessage.txt
+
+расшифровка:
+openssl rsautl -decrypt -inkey privatekey -in encryptedmessage.txt -out decryptedmessage.txt

@@ -1,0 +1,148 @@
+Настройка и монтирование NFS
+
+http://sysadm.pp.ua/linux/nfs-configuration.html http://www.rhd.ru/docs/manuals/enterprise/RHEL-4-Manual/sysadmin-guide/s1-nfs-export.html
+
+
+В роли сервера возьмем Ubuntu 12.04.
+Master server: 192.168.2.213 (Ubuntu)
+Clients: 192.168.2.72 (Centos), 192.168.2.180 (Windows)
+
+Настройка сервера
+Для начала нужно настроить сервер. Так как мы будем использовать Ubuntu в роли сервера, нужно установить соответствующий пакет
+
+apt-get install nfs-kernel-server
+
+После установки нужного пакета у нас создались два файла конфигураций. Из лога установки:
+
+Creating config file /etc/idmapd.conf with new version
+Creating config file /etc/default/nfs-common with new version
+
+В первом файле описан user (созданный при установке пакета) и group , для участия в mapping-e (идентификации пользователей).
+
+cat /etc/idmapd.conf
+[General]
+ 
+Verbosity = 0
+Pipefs-Directory = /run/rpc_pipefs
+# set your own domain here, if id differs from FQDN minus hostname
+# Domain = localdomain
+ 
+[Mapping]
+ 
+Nobody-User = nobody
+Nobody-Group = nogroup
+
+Как мы знаем, в Linux каждый файл принадлежит конкретному пользователю, у которого есть свой (UID,GID), но у Windows системах схема немного другая. И в связи с этим был придуман механизм mapping, который делает трансляцию разных пользователей с различных ОС в понятный для файловой системы Linux вид.
+
+
+Второй файл нужен для настройки идентификации Kerberos и настройке нестандартного порта, на котором будет слушаться демон. Он пока нам не нужен.
+
+root@ubuntu:~# cat /etc/default/nfs-common
+# If you do not set values for the NEED_ options, they will be attempted
+# autodetected; this should be sufficient for most people. Valid alternatives
+# for the NEED_ options are "yes" and "no".
+ 
+# Do you want to start the statd daemon? It is not needed for NFSv4.
+NEED_STATD=
+ 
+# Options for rpc.statd.
+#   Should rpc.statd listen on a specific port? This is especially useful
+#   when you have a port-based firewall. To use a fixed port, set this
+#   this variable to a statd argument like: "--port 4000 --outgoing-port 4001".
+#   For more information, see rpc.statd(8) or http://wiki.debian.org/SecuringNFS
+STATDOPTS=
+ 
+# Do you want to start the gssd daemon? It is required for Kerberos mounts.
+NEED_GSSD=
+
+Все директории для шаринга нужно прописывать в файле /etc/exports. Для начала создадим 2 папки в домашней директории и закинем в них файлы. Дерево каталогов и файлов для экспорта:
+
+root@ubuntu:~# tree /home/alex/
+/home/alex/
+├── nfs_dir1
+│   ├── file1_dir1
+│   ├── file2_dir1
+│   └── file3_dir1
+├── nfs_dir2
+├── file1_dir2
+├── file2_dir2
+└── file3_dir2
+Теперь нужно присвоит юзера и группу для этих каталогов (берем с файла /etc/idmapd.conf ).
+
+chown –R nobody:nogroup nfs_dir1/
+chown –R nobody:nogroup nfs_dir2/
+если не сработает, может стоит дать права на папку chmod 777 (тут полные права всем - осторожнее)
+
+Для начала сделаем экспорт директории nfs_dir1 для конкретного IP. Редактируем файл /etc/exprots.
+
+vim /etc/exports
+# Для конкретного хоста (Windows)
+/home/alex/nfs_dir1     192.168.2.180(rw,sync,all_squash,no_subtree_check,insecure)
+# Для  любого хоста подсети
+/home/alex/nfs_dir2     192.168.2.0/24(rw,no_root_squash,sync,no_subtree_check)
+Здесь наведен минимальный набор опций для корректной работы хранилища с ОС Windows.
+
+/home/alex/nfs_dir1 – путь к папке, для которой раздается доступ;
+192.168.2.180 – IP-адрес, которому раздается доступ к папке(можно указать всю сеть, тогда запись примет вид 192.168.2.0/24)
+(rw,sync,all_squash,no_subtree_check) – набор опций.
+
+еще пример экспорта (разрешения на открытий дректорий):
+/public *(rw) - открыть папку public всем на запись
+pc_name.local(ro,sync) - тут доменное pc_name.local которому открывается доступ, но для такого разрешения должно работать ДНС
+/public 192.168.2.180(rw) - открыть папку public только для 192.168.2.180 на запись
+/public 192.168.2.0/24(rw) - открыть папку public для всей подсети 192.168.2.0 на запись
+
+быть внимательнее 192.168.2.0/24(rw) и 192.168.2.0/24 (rw) -пробел между правилами - это разные ситуации, без пробела у меня работало
+опции rw,sync,all_squash,no_subtree_check,insecure можно не указывать - они встанут сами, примерно такие - rw,sync,all_squash,no_subtree_check,insecure
+
+
+Популярные опции:
+rw –чтение/запись(может принимать значение ro-только чтение);
+no_root_squash – по умолчанию пользователь root на клиентской машине не будет иметь доступа к разделяемой директории сервера. Этой опцией мы снимаем это ограничение. В целях безопасности этого лучше не делать;
+sync – синхронный режим доступа(может принимать обратное значение — async);
+noaccess – запрещает доступ к указанной директории. Может быть полезной, если перед этим вы задали доступ всем пользователям сети к определенной директории, и теперь хотите ограничить доступ в поддиректории лишь некоторым пользователям.
+all_squash– подразумевает, что все подключения будут выполнятся от анонимного пользователя (нужно для Windows клиента)
+anonuid=1000 – привязывает анонимного пользователя к «местному» пользователю;
+anongid=1000 – привязывает анонимного пользователя к группе «местного» пользователя.
+no_subtree_check(subtree_check) –если экспортируется подкаталог файловой системы, но не вся файловая система, сервер проверяет, находится ли запрошенный файл в экспортированном подкаталоге. Отключение проверки уменьшает безопасность, но увеличивает скорость передачи данных.
+Обычно, Linux (и другие Unix-подобные операционные системы) резервируют TCP и UDP порты от 1-1023 (так называемые безопасные порты) для использования процессами пользователя root. Чтобы удостовериться, что именно root инициировал удаленное подключение NFS, сервер NFS обычно требует, чтобы удаленные клиенты использовали безопасные порты. Это соглашение, однако, не соблюдается некоторыми операционными системами (например Windows). В таких случаях опция insecure позволяет клиенту NFS использовать любой порт TCP/UDP. Обычно она требуется при обслуживании клиентов Windows.
+
+нужно применить настройки
+exportfs –a
+
+Теперь проверяем что у нас экспортировалось (показать правила (экспорты)).
+exportfs -v
+/home/alex/nfs_dir1        192.168.2.180(rw,wdelay,all_squash,no_subtree_check,insecure)
+/home/alex/nfs_dir2        192.168.2.0/24(rw,wdelay,no_root_squash,no_subtree_check)
+
+exportfs -r
+переэкспортирует (перечитывает) экспорты из файла и обновляет пути и разрешения, можно редактировать файл export и после перечитывать этой коммандой
+
+exportfs -i
+игнорирует экспорты, права будут работаь до перезагрузки системы
+
+можно все сразу
+exportfs -arvf
+
+перезапускаем сервис, но можно этого и не делать (но это не точно)
+systemctl start nfs-cernel-server
+systemctl enable nfs-cernel-server
+
+хз чего тут, возможно пригодится когда то
+ufw states - if active -> disableing or - ufw allow nfs
+
+хз чего тут, возможно пригодится когда то
+update-rc.d portmap defaults
+update-rc.d nfs-common default (may not work)
+update-rc.d nfs-kernel-server default
+
+логи появляются в /var/log/messages
+включяем
+rpcdebug -m nfsd all
+ 
+Выключаются, соответственно командой
+rpcdebug -m nfsd -c all
+
+
+for delete -> exportfs - u pc_name.local:/srv/nfs/directoryexportfs -v -see mounted directoryexportfs -a -sharing directory    
+  
