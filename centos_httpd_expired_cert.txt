@@ -1,0 +1,158 @@
+не стартует апач (httpd) на ctntos 7
+Certificate has expired и SEC_ERROR_NOT_INITIALIZED
+
+смотрим лог
+tail -f /var/log/httpd/error_log
+
+[Tue Oct 25 15:14:08 2022] [error] Unable to verify certificate 'Server-Cert'. Add "NSSEnforceValidCerts off" to nss.conf so the server can start until the problem can be resolved.
+[Tue Oct 25 15:15:52 2022] [notice] suEXEC mechanism enabled (wrapper: /usr/sbin/suexec)
+[Tue Oct 25 15:15:52 2022] [error] SSL Library Error: -8181 Certificate has expired
+[Tue Oct 25 15:15:52 2022] [error] Unable to verify certificate 'Server-Cert'. Add "NSSEnforceValidCerts off" to nss.conf so the server can start until the problem can be resolved.
+[Tue Oct 25 15:20:50 2022] [notice] suEXEC mechanism enabled (wrapper: /usr/sbin/suexec)
+[Tue Oct 25 15:20:50 2022] [error] SSL Library Error: -8181 Certificate has expired
+[Tue Oct 25 15:20:50 2022] [error] Unable to verify certificate 'Server-Cert'. Add "NSSEnforceValidCerts off" to nss.conf so the server can start until the problem can be resolved.
+[Tue Oct 25 15:39:42 2022] [notice] suEXEC mechanism enabled (wrapper: /usr/sbin/suexec)
+[Tue Oct 25 15:39:42 2022] [error] SSL Library Error: -8181 Certificate has expired
+[Tue Oct 25 15:39:42 2022] [error] Unable to verify certificate 'Server-Cert'. Add "NSSEnforceValidCerts off" to nss.conf so the server can start until the problem can be resolved.
+
+
+SSL Library Error: -8181 Certificate has expired
+говорит об окончании срока сертификата
+
+
+Перегенерируем новый сертификат, для начала
+смотрим директорию
+ls -la /etc/httpd
+drwxr-xr-x.   2 root root  4096 Окт 25 15:49 alias
+
+дразрешаем туда запись
+chmod 777 alias
+
+выполняем
+certutil -d /etc/httpd/alias -L -n Server-Cert
+
+получаем что то похожее на это:
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 4 (0x4)
+        Signature Algorithm: PKCS #1 SHA-1 With RSA Encryption
+        Issuer: "CN=Certificate Shack,O=example.com,C=US"
+        Validity:
+            Not Before: Thu Sep 06 10:10:09 2018
+            Not After : Tue Sep 06 10:10:09 2022
+        Subject: "CN=centos,O=example.com,C=US"
+        Subject Public Key Info:
+            Public Key Algorithm: PKCS #1 RSA Encryption
+            RSA Public Key:
+                Modulus:
+                    eb:e3:d3:aa:96:81:f6:eb:ee:c7:a8:bf:18:e5:89:41:
+                    ee:57:29:bd:f1:1d:4e:07:a4:aa:99:88:9c:23:d5:6a:
+                    4a:18:1c:63:0f:1f:6d:71:54:94:1f:a9:c2:34:2e:61:
+                    71:25:91:07:22:23:90:56:1b:2f:df:51:53:10:0f:c2:
+                    86:9f:06:f3:e2:10:b3:42:80:ea:80:e0:7b:c3:d0:90:
+                    44:08:a0:67:2e:c0:23:bd:37:5a:49:fa:83:a5:31:0d:
+                    f3:18:4f:58:cd:6a:d4:1f:b7:6c:72:a3:59:96:ab:19:
+                    27:c3:3c:a5:3a:ff:44:3c:10:6a:d5:bc:9d:be:59:3d
+                Exponent: 65537 (0x10001)
+        Signed Extensions:
+            Name: Certificate Type
+            Data: <SSL Server>
+
+            Name: Certificate Key Usage
+            Usages: Key Encipherment
+
+    Signature Algorithm: PKCS #1 SHA-1 With RSA Encryption
+    Signature:
+        51:7b:9e:06:d0:2f:6d:c4:12:2e:49:68:91:19:f2:ba:
+        48:d4:d7:38:1d:3b:7c:29:80:78:9c:a5:20:27:5b:01:
+        78:c8:25:d9:fe:19:86:d1:30:2f:65:62:3d:1b:f0:c6:
+        25:d9:de:b5:40:b5:95:cb:47:c8:45:67:9b:1e:88:cb:
+        4e:9f:02:01:d8:bf:4e:df:cc:78:66:8b:27:c0:a9:30:
+        45:c3:77:93:67:ca:4e:66:55:43:34:ed:a6:24:53:3e:
+        27:d4:57:b8:ab:6a:da:38:fa:f4:c3:a2:f8:b0:14:34:
+        a9:53:c9:eb:69:d1:79:82:64:2f:db:3a:e2:fa:c5:6f
+    Fingerprint (SHA-256):
+        DB:9A:0C:67:8D:2B:6E:84:5D:CD:F6:F9:4D:BA:3C:7B:D3:9C:71:74:9C:DD:49:D2:87:50:EA:B2:8F:71:5C:0F
+    Fingerprint (SHA1):
+        63:03:B2:72:21:97:75:6C:3A:77:90:D4:DB:8E:25:AB:63:87:36:3D
+
+    Mozilla-CA-Policy: false (attribute missing)
+    Certificate Trust Flags:
+        SSL Flags:
+            User
+        Email Flags:
+            User
+        Object Signing Flags:
+            User
+
+переходим в 
+cd /etc/httpd/alias
+
+удаляем (я переименовал) файлы с расширением db
+rm -f *.db
+
+генерируем новый сертификат
+/usr/sbin/gencert /etc/httpd/alias > /etc/httpd/alias/install.log 2>&1
+
+после появятся новые файлы с расширением db
+
+смотрим сертификат
+certutil -d /etc/httpd/alias -L -n Server-Cert
+
+видим, что выдался на 4 года
+ Validity:
+            Not Before: Wed Oct 26 05:22:13 2022
+            Not After : Mon Oct 26 05:22:13 2026
+
+даем права файлам (создаются с меньшими правами)
+chmod 750 *.db
+
+https://www.cnblogs.com/Fle-x/articles/5789614.html
+
+выходим на уровень вверх и 
+возвращаем права на директорию alias - drwxr-xr-x.
+chmod 755 alias
+
+после апач стартанет, но не запустится, потому что сертификат
+не инициализирован
+
+tail -f /var/log/httpd/error_log
+
+[error] NSS_Initialize failed. Certificate database: /etc/httpd/alias.
+[Wed Oct 26 08:45:26 2022] [error] SSL Library Error: -8038 SEC_ERROR_NOT_INITIALIZED
+[Wed Oct 26 08:45:27 2022] [notice] child pid 6829 exit signal Segmentation fault (11)
+[Wed Oct 26 08:45:27 2022] [notice] child pid 6830 exit signal Segmentation fault (11)
+[Wed Oct 26 08:45:27 2022] [notice] child pid 6831 exit signal Segmentation fault (11)
+[Wed Oct 26 08:45:27 2022] [notice] child pid 6832 exit signal Segmentation fault (11)
+[Wed Oct 26 08:45:27 2022] [error] NSS_Initialize failed. Certificate database: /etc/httpd/alias.
+[Wed Oct 26 08:45:27 2022] [error] SSL Library Error: -8038 SEC_ERROR_NOT_INITIALIZED
+[Wed Oct 26 08:45:27 2022] [error] NSS_Initialize failed. Certificate database: /etc/httpd/alias.
+[Wed Oct 26 08:45:27 2022] [error] SSL Library Error: -8038 SEC_ERROR_NOT_INITIALIZED
+[Wed Oct 26 08:45:27 2022] [error] NSS_Initialize failed. Certificate database: /etc/httpd/alias.
+[Wed Oct 26 08:45:27 2022] [error] SSL Library Error: -8038 SEC_ERROR_NOT_INITIALIZED
+[Wed Oct 26 08:45:27 2022] [error] NSS_Initialize failed. Certificate database: /etc/httpd/alias.
+[Wed Oct 26 08:45:27 2022] [error] SSL Library Error: -8038 SEC_ERROR_NOT_INITIALIZED
+[Wed Oct 26 08:45:27 2022] [error] NSS_Initialize failed. Certificate database: /etc/httpd/alias.
+[Wed Oct 26 08:45:27 2022] [error] SSL Library Error: -8038 SEC_ERROR_NOT_INITIALIZED
+[Wed Oct 26 08:45:27 2022] [error] NSS_Initialize failed. Certificate database: /etc/httpd/alias.
+[Wed Oct 26 08:45:27 2022] [error] SSL Library Error: -8038 SEC_ERROR_NOT_INITIALIZED
+[Wed Oct 26 08:45:27 2022] [error] NSS_Initialize failed. Certificate database: /etc/httpd/alias.
+[Wed Oct 26 08:45:27 2022] [error] NSS_Initialize failed. Certificate database: /etc/httpd/alias.
+[Wed Oct 26 08:45:27 2022] [error] SSL Library Error: -8038 SEC_ERROR_NOT_INITIALIZED
+[Wed Oct 26 08:45:27 2022] [error] SSL Library Error: -8038 SEC_ERROR_NOT_INITIALIZED
+
+переименование конфига ничего не дает
+mv /etc/httpd/conf.d/ssl.conf to /etc/httpd/conf.d/ssl.conf-BAK
+
+запустим обновление, но и это нам не даст ничего - у меня нет выхода в интернет
+yum update mod_nss
+
+а вот добавление прав - эффект дает
+chgrp apache /etc/httpd/alias/*db
+chmod g+w /etc/httpd/alias/*db
+
+запускаем, проверяем
+/etc/init.d/httpd start
+/etc/init.d/httpd status
+

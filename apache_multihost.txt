@@ -1,0 +1,837 @@
+APACHE MULTIHOST     CENTOS 7
+
+Отключаем selinux. Находим файл /etc/sysconfig/selinux и редактируем его:
+Приводим строку с соответствующим параметром к следующему виду:
+SELINUX=disabled   - но после этого у меня случился кернел паник 
+SELINUX=0   - а в этом случае все прошло хорошо
+
+компьютер перезагружаем
+
+настроим ssh
+(не забываем копировать оригинальные конфиги)
+открываем и редактируем
+/etc/ssh_config
+раскоментируем строки
+  PasswordAuthentication yes
+  Port 22
+  Protocol 2,1
+
+сохраняем
+
+обновляемся
+yum update
+
+устанавливаем apach
+yum install httpd
+  
+=======настройка web сервера apache =======
+===== virtual host==============
+http://www.codenet.ru/webmast/apache/Apache-WindowsNT/httpdconf.php
+
+(первый сайт нужно сделать как сайт заглушку и всем его запретить,
+нужно об этом почитать отдельно)
+
+
+в centos 6.9 это httpd
+установка
+yum install httpd
+
+дальше нужно разрешить 80 порт в iptables чтобы отображались
+странички с других компьютеров
+
+iptables -I INPUT -p tcp --dport 80 -m state --state NEW -j ACCEPT
+
+далее идем в конфиг апача
+/etc/httpd/conf/
+там файл httpd.conf - не забудем сделать копию
+открываем на редактирование и смотрим окончения строк
+
+<IfModule prefork.c>
+StartServers       8
+MinSpareServers    5
+MaxSpareServers   20
+ServerLimit      256
+MaxClients       256
+MaxRequestsPerChild  4000
+</IfModule>
+
+<IfModule worker.c>
+StartServers         4
+MaxClients         300
+MinSpareThreads     25
+MaxSpareThreads     75
+ThreadsPerChild     25
+MaxRequestsPerChild  0
+</IfModule>
+
+спускаемся до Section 2: и исправляем
+ServerAdmin root@localhost
+
+далее находим и исправляем 
+
+#ServerName www.example.com:80
+#ServerName localhost
+
+ServerName 192.168.150.2:80   - тут свой ip, который у сервера
+
+находим 
+Listen 80 и заменяем на 
+Listen *:80
+
+далее спускаемся почти в самый конец и находим
+NameVirtualHost *:80
+нужно раскомментировать, тем самым мы разрешим виртуальные хосты
+
+я оставил в комментариях и не трогал, у меня свои конфиги которые лежат отдельно, об этом
+позже
+#<VirtualHost *:80>
+#    ServerAdmin webmaster@dummy-host.example.com
+#    DocumentRoot /www/docs/dummy-host.example.com
+#    ServerName dummy-host.example.com
+#    ErrorLog logs/dummy-host.example.com-error_log
+#    CustomLog logs/dummy-host.example.com-access_log common
+#</VirtualHost>
+
+а вот тут придется немного исправить, а если нет в конце, то добавить ip адрес
+#IncludeOptional conf.d/*.conf
+#ServerName 127.0.0.1
+ServerName 192.168.150.2
+
+теперь нужно создавать виртуальные хосты - странички
+переходим в /etc/httpd/conf.d
+
+видим там много чего есть - не трогаем
+-rw-r--r--. 1 root root  674 Мар 22  2017 php.conf
+-rw-r--r--. 1 root root  392 Июн 19 18:45 README
+-rw-r--r--. 1 root root  845 Мар 22  2017 revocator.conf
+-rw-r--r--  1 root root  199 Май 29  2006 sarg.conf
+-rw-r--r--. 1 root root  322 Мар 22  2017 squid.conf
+-rw-r--r--. 1 root root 9465 Фев 19  2018 ssl.conf
+
+создаем свои
+
+-rw-r--r--  1 root root  373 Ноя  9 12:38 site1.conf
+-rw-r--r--  1 root root  388 Ноя  9 12:39 site2.conf
+-rw-r--r--  1 root root  388 Ноя  9 12:41 site3.conf
+
+имя_странички (можно без точки и домена).conf
+но имя конфига и странички должны совпадать!
+
+В документации Apache значится:
+
+The first VirtualHost section is used for requests without a known server name.
+Т.е. первый виртуальный хост будет использован для имен, не попадающих ни под одно из условий ServerName, поэтому первой желательно обьявить секцию ловушку. Для этого в конец файла httpd.conf добавляем:
+
+
+сам конфиг
+
+[root@centos conf.d]# cat site1.conf 
+
+<VirtualHost *:80>
+ServerName site1
+ServerAlias www.site1
+DocumentRoot /srv/www/
+
+важно не запутаться в путях, а то получится вложенные
+друг в друга сайты
+
+CustomLog /srv/www/site1/access.log combined
+CustomLog — название журнала доступа к серверу.
+
+<Directory /srv/www/site1>
+тут лежит сам сайт, у нас в директории site1
+	DirectoryIndex index.html
+
+#	Order deny,allow
+#	Deny from all
+#	Allow from 127.0.0.1
+#	Allow from ::1
+	# Allow from your-workstation.com
+
+AllowOverride All
+Order allow,deny
+Allow from all 
+</Directory>
+
+а вот с директориями нужно поиграться
+
+1. Директива ServerAdmin указывает электронный адрес администратора сервера, на который приходят все уведомления с хоста, касающиеся его администрирования.
+2. Директива DocumentRoot указывает корневую директорию с файлами сайта, которые должны будут выдаваться веб-сервером клиенту (браузеру).
+3. Директива Server Name определяет имя хоста, по запросу которого должны будут выдаваться файлы, расположенные в DocumentRoot.
+4. Директива ServerAlias служит для задания альтернативных имен хоста (алиасов, псевдонимов), на которые он откликается.
+5. Директива ErrorLog задает файлы протоколов ошибок для каждого хоста, а CustomLog – файлы протоколов для всего остального, кроме ошибок.
+
+
+В тегах <Directory> </Directory> заключается перечень директив (параметров), которые будут применяться к конкретной директории, которая указывается в открывающем теге. В примере выше – это var/www/
+
+AllowOverride указывает, использовать ли файлы .htaccess и если да, то какие глобальные директивы веб-сервера в можно переопределять в таких файлах. В представленном выше примере значение AllowOverride установленно в All, что разрешает обрабатывать файлы .htaccess и все указанные в нём директивы. Существуют и другие возможные значения:
+
+AuthConfig – разрешает использовать директивы авторизации (AuthDBMGroupFile, AuthDBMUserFile, AuthGroupFile, AuthName, AuthType, AuthUserFile, require, и т.д..).
+
+FileInfo – разрешает использовать директивы, управляющие типами документов (AddEncoding, AddLanguage, AddType, DefaultType, ErrorDocument, LanguagePriority, и т.д..).
+
+Indexes — разрешает использовать директивы для управления индексацией каталогов (AddDescription, AddIcon, AddIconByEncoding, AddIconByType, DefaultIcon, DirectoryIndex, FancyIndexing, HeaderName, IndexIgnore, IndexOptions, ReadmeName, и т.д..).
+
+Limit — разрешает использовать директивы управления доступом (allow, deny и order).
+
+Options — разрешает использовать директивы, с помощью которых можно управлять специфическими особенностями каталога (Options и XBitHack).
+
+
+Директивы Apache для контроля доступа
+
+Контроль по IP
+
+Если вам нужно просто разрешить или блокировать доступ к какой-либо части сайта или всему серверу в целом для определенных IP, используйте следующие директивы.
+
+Внимание! Если вы хотите использовать эти директивы в файле .htaccess, проверьте, что бы для вашего хоста директива AllowOverride корневого файла конфигурации Apache включала опцию Limit
+
+Order
+
+Значения: Order (allow,deny | deny,allow)
+
+Директива Order указывает порядок, в котором будет производиться чтение из директив Allow и Deny
+
+Allow,deny - сначала читаются директивы Allow. Если пользователя нет в этом списке, то он блокируется. Если же он есть, то далее считываются директивы Deny(процесс еще не закончен). Если же пользователь есть и там, то он блокируется. Если его там нет, то он пропускается. Т.е пользователь пропускается только при наличии только в списке Allow, но не в Deny
+Deny,allow - сначала обрабатываются директивы Deny и отсеиваются те пользователи, которые есть в этом списке. Любые другие пропускаются. Т.е пользователь пропускается всегда, но если его нет в списке Deny
+Allow и Deny
+
+Формат директив: (Allow | Deny) from (IP | IPs | all) (IP | IPs | all) : (IP | IPs | all)
+
+Директивы Allow и Deny определяют клиентов, которым разрешить или запретить доступ к серверу.
+
+Директивы допускают использование:
+
+Одиночного IP(IP) - обычный вид IP, например, 127.0.0.1
+Группы IP(IPs) - группа IP, например, для доступа, только из локальной сети, 192.168.1.0/24
+Любого IP(all) - обозначает любой IP
+После слова from может идти любое количество указанных директив, разделенных пробелом
+
+Примеры
+
+Файл .htaccess
+
+Order allow,deny
+# Deny from all # если вы это напишите, то даже те адреса,
+# которые указаны в директивах Allow не будет пропущены
+Allow from 192.168.1.0/24 11.11.11.12
+В этом файле указывается доступ только для клиентов из локальной сети или с IP 11.11.11.12
+
+
+и теперь нужно создать сами сайти, директории с index.html
+создавать я буду в 
+/srv/www/
+и называть site1, site2, site3...
+и в каждой директории создадим index.html
+с примерным содержимым
+<h1>test site1</h1>, 1,2,3 меняем на нужные
+
+проверяем конфиг
+apachectl configtest
+
+и запускаем
+/etc/init.d/httpd start
+
+если везде ОК - то пробуем открыть наши странички
+в браузере вводим 192.168.150.2/site1
+и должно отобразиться содержимое
+192.168.150.2 - ip сервере на котором запущен апач
+
+если страничка не отображается - смотрим логи
+tail -f /var/log/httpd/error_log
+
+и пробуем обновить страничку, внимательнее к вложенности директорий, если пишет
+что нет такой директории смотрим внимательно, пщем директорию, пробуем туда зайти
+может и с правами чтто не так
+
+---------------------------------------
+файлы страниц лежат в 
+/srv/www/site1/index.html
+/srv/www/site2/index.html
+/srv/www/site3/index.html
+...
+
+конфиг /etc/httpd/conf/httpd.conf, 
+оставлены первые строки коментариев и значения, остальные закомментированные строки удалены
+
+
+
+### Section 1: Global Environment
+ServerTokens OS
+
+# Do NOT add a slash at the end of the directory path.
+ServerRoot "/etc/httpd"
+
+
+# PidFile: The file in which the server should record its process
+PidFile run/httpd.pid
+
+
+# Timeout: The number of seconds before receives and sends time out.
+Timeout 60
+
+
+# KeepAlive: Whether or not to allow persistent connections (more than
+KeepAlive Off
+
+
+# MaxKeepAliveRequests: The maximum number of requests to allow
+MaxKeepAliveRequests 100
+
+
+# KeepAliveTimeout: Number of seconds to wait for the next request from the
+KeepAliveTimeout 15
+
+# MaxRequestsPerChild: maximum number of requests a server process serves
+<IfModule prefork.c>
+StartServers       8
+MinSpareServers    5
+MaxSpareServers   20
+ServerLimit      256
+MaxClients       256
+MaxRequestsPerChild  4000
+</IfModule>
+
+# MaxRequestsPerChild: maximum number of requests a server process serves
+<IfModule worker.c>
+StartServers         4
+MaxClients         300
+MinSpareThreads     25
+MaxSpareThreads     75
+ThreadsPerChild     25
+MaxRequestsPerChild  0
+</IfModule>
+
+
+# Listen: Allows you to bind Apache to specific IP addresses and/or
+Listen *:80
+
+# Dynamic Shared Object (DSO) Support
+#
+LoadModule auth_basic_module modules/mod_auth_basic.so
+LoadModule auth_digest_module modules/mod_auth_digest.so
+LoadModule authn_file_module modules/mod_authn_file.so
+LoadModule authn_alias_module modules/mod_authn_alias.so
+LoadModule authn_anon_module modules/mod_authn_anon.so
+LoadModule authn_dbm_module modules/mod_authn_dbm.so
+LoadModule authn_default_module modules/mod_authn_default.so
+LoadModule authz_host_module modules/mod_authz_host.so
+LoadModule authz_user_module modules/mod_authz_user.so
+LoadModule authz_owner_module modules/mod_authz_owner.so
+LoadModule authz_groupfile_module modules/mod_authz_groupfile.so
+LoadModule authz_dbm_module modules/mod_authz_dbm.so
+LoadModule authz_default_module modules/mod_authz_default.so
+LoadModule ldap_module modules/mod_ldap.so
+LoadModule authnz_ldap_module modules/mod_authnz_ldap.so
+LoadModule include_module modules/mod_include.so
+LoadModule log_config_module modules/mod_log_config.so
+LoadModule logio_module modules/mod_logio.so
+LoadModule env_module modules/mod_env.so
+LoadModule ext_filter_module modules/mod_ext_filter.so
+LoadModule mime_magic_module modules/mod_mime_magic.so
+LoadModule expires_module modules/mod_expires.so
+LoadModule deflate_module modules/mod_deflate.so
+LoadModule headers_module modules/mod_headers.so
+LoadModule usertrack_module modules/mod_usertrack.so
+LoadModule setenvif_module modules/mod_setenvif.so
+LoadModule mime_module modules/mod_mime.so
+LoadModule dav_module modules/mod_dav.so
+LoadModule status_module modules/mod_status.so
+LoadModule autoindex_module modules/mod_autoindex.so
+LoadModule info_module modules/mod_info.so
+LoadModule dav_fs_module modules/mod_dav_fs.so
+LoadModule vhost_alias_module modules/mod_vhost_alias.so
+LoadModule negotiation_module modules/mod_negotiation.so
+LoadModule dir_module modules/mod_dir.so
+LoadModule actions_module modules/mod_actions.so
+LoadModule speling_module modules/mod_speling.so
+LoadModule userdir_module modules/mod_userdir.so
+LoadModule alias_module modules/mod_alias.so
+LoadModule substitute_module modules/mod_substitute.so
+LoadModule rewrite_module modules/mod_rewrite.so
+LoadModule proxy_module modules/mod_proxy.so
+LoadModule proxy_balancer_module modules/mod_proxy_balancer.so
+LoadModule proxy_ftp_module modules/mod_proxy_ftp.so
+LoadModule proxy_http_module modules/mod_proxy_http.so
+LoadModule proxy_ajp_module modules/mod_proxy_ajp.so
+LoadModule proxy_connect_module modules/mod_proxy_connect.so
+LoadModule cache_module modules/mod_cache.so
+LoadModule suexec_module modules/mod_suexec.so
+LoadModule disk_cache_module modules/mod_disk_cache.so
+LoadModule cgi_module modules/mod_cgi.so
+LoadModule version_module modules/mod_version.so
+
+# Load config files from the config directory "/etc/httpd/conf.d".
+Include conf.d/*.conf
+
+# User/Group: The name (or #number) of the user/group to run httpd as.
+User apache
+Group apache
+
+
+# ServerAdmin: Your address, where problems with the server should be
+ServerAdmin root@localhost
+
+
+# ServerName gives the name and port that the server uses to identify itself.
+ServerName 192.168.1.2:80      #ip сервера
+
+
+# UseCanonicalName: Determines how Apache constructs self-referencing
+UseCanonicalName Off
+
+
+# DocumentRoot: The directory out of which you will serve your
+DocumentRoot "/var/www/html"
+
+
+# Each directory to which Apache has access can be configured with respect
+<Directory />
+    Options FollowSymLinks
+    AllowOverride None
+</Directory>
+
+
+# This should be changed to whatever you set DocumentRoot to.
+<Directory "/var/www/html">
+
+
+# Possible values for the Options directive are "None", "All",
+    Options Indexes FollowSymLinks
+
+# AllowOverride controls what directives may be placed in .htaccess files.
+    AllowOverride None
+
+
+# Controls who can get stuff from this server.
+    Order allow,deny
+    Allow from all
+</Directory>
+
+
+
+# UserDir: The name of the directory that is appended onto a user's home
+<IfModule mod_userdir.c>
+    UserDir disabled
+</IfModule>
+
+
+# DirectoryIndex: sets the file that Apache will serve if a directory
+DirectoryIndex index.html index.html.var
+
+
+# AccessFileName: The name of the file to look for in each directory
+AccessFileName .htaccess
+
+# The following lines prevent .htaccess and .htpasswd files from being
+# viewed by Web clients.
+<Files ~ "^\.ht">
+    Order allow,deny
+    Deny from all
+    Satisfy All
+</Files>
+
+
+# TypesConfig describes where the mime.types file (or equivalent) is
+TypesConfig /etc/mime.types
+
+
+# DefaultType is the default MIME type the server will use for a document
+DefaultType text/plain
+
+
+# The mod_mime_magic module allows the server to use various hints from the
+<IfModule mod_mime_magic.c>
+    MIMEMagicFile conf/magic
+</IfModule>
+
+
+# HostnameLookups: Log the names of clients or just their IP addresses
+HostnameLookups Off
+
+
+# ErrorLog: The location of the error log file.
+ErrorLog logs/error_log
+
+
+# LogLevel: Control the number of messages logged to the error_log.
+LogLevel warn
+
+
+# The following directives define some format nicknames for use with
+LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"" combined
+LogFormat "%h %l %u %t \"%r\" %>s %b" common
+LogFormat "%{Referer}i -> %U" referer
+LogFormat "%{User-agent}i" agent
+
+
+# For a single logfile with access, agent, and referer information
+CustomLog logs/access_log combined
+
+# Optionally add a line containing the server version and virtual host
+ServerSignature On
+
+
+# Aliases: Add here as many aliases as you need (with no limit). The format is
+Alias /icons/ "/var/www/icons/"
+
+<Directory "/var/www/icons">
+    Options Indexes MultiViews FollowSymLinks
+    AllowOverride None
+    Order allow,deny
+    Allow from all
+</Directory>
+
+
+# WebDAV module configuration section.
+<IfModule mod_dav_fs.c>
+    # Location of the WebDAV lock database.
+    DAVLockDB /var/lib/dav/lockdb
+</IfModule>
+
+
+# ScriptAlias: This controls which directories contain server scripts.
+ScriptAlias /cgi-bin/ "/var/www/cgi-bin/"
+
+
+# "/var/www/cgi-bin" should be changed to whatever your ScriptAliased
+# CGI directory exists, if you have that configured.
+<Directory "/var/www/cgi-bin">
+    AllowOverride None
+    Options None
+    Order allow,deny
+    Allow from all
+</Directory>
+
+
+# IndexOptions: Controls the appearance of server-generated directory
+IndexOptions FancyIndexing VersionSort NameWidth=* HTMLTable Charset=UTF-8
+
+# AddIcon* directives tell the server which icon to show for different
+AddIconByEncoding (CMP,/icons/compressed.gif) x-compress x-gzip
+
+AddIconByType (TXT,/icons/text.gif) text/*
+AddIconByType (IMG,/icons/image2.gif) image/*
+AddIconByType (SND,/icons/sound2.gif) audio/*
+AddIconByType (VID,/icons/movie.gif) video/*
+
+AddIcon /icons/binary.gif .bin .exe
+AddIcon /icons/binhex.gif .hqx
+AddIcon /icons/tar.gif .tar
+AddIcon /icons/world2.gif .wrl .wrl.gz .vrml .vrm .iv
+AddIcon /icons/compressed.gif .Z .z .tgz .gz .zip
+AddIcon /icons/a.gif .ps .ai .eps
+AddIcon /icons/layout.gif .html .shtml .htm .pdf
+AddIcon /icons/text.gif .txt
+AddIcon /icons/c.gif .c
+AddIcon /icons/p.gif .pl .py
+AddIcon /icons/f.gif .for
+AddIcon /icons/dvi.gif .dvi
+AddIcon /icons/uuencoded.gif .uu
+AddIcon /icons/script.gif .conf .sh .shar .csh .ksh .tcl
+AddIcon /icons/tex.gif .tex
+AddIcon /icons/bomb.gif /core
+
+AddIcon /icons/back.gif ..
+AddIcon /icons/hand.right.gif README
+AddIcon /icons/folder.gif ^^DIRECTORY^^
+AddIcon /icons/blank.gif ^^BLANKICON^^
+
+
+# DefaultIcon is which icon to show for files which do not have an icon
+DefaultIcon /icons/unknown.gif
+
+
+# ReadmeName is the name of the README file the server will look for by
+ReadmeName README.html
+HeaderName HEADER.html
+
+
+# IndexIgnore is a set of filenames which directory indexing should ignore
+IndexIgnore .??* *~ *# HEADER* README* RCS CVS *,v *,t
+
+
+# DefaultLanguage and AddLanguage allows you to specify the language of
+#
+AddLanguage ca .ca
+AddLanguage cs .cz .cs
+AddLanguage da .dk
+AddLanguage de .de
+AddLanguage el .el
+AddLanguage en .en
+AddLanguage eo .eo
+AddLanguage es .es
+AddLanguage et .et
+AddLanguage fr .fr
+AddLanguage he .he
+AddLanguage hr .hr
+AddLanguage it .it
+AddLanguage ja .ja
+AddLanguage ko .ko
+AddLanguage ltz .ltz
+AddLanguage nl .nl
+AddLanguage nn .nn
+AddLanguage no .no
+AddLanguage pl .po
+AddLanguage pt .pt
+AddLanguage pt-BR .pt-br
+AddLanguage ru .ru
+AddLanguage sv .sv
+AddLanguage zh-CN .zh-cn
+AddLanguage zh-TW .zh-tw
+
+
+# LanguagePriority allows you to give precedence to some languages
+LanguagePriority en ca cs da de el eo es et fr he hr it ja ko ltz nl nn no pl pt pt-BR ru sv zh-CN zh-TW
+
+
+# ForceLanguagePriority allows you to serve a result page rather than
+ForceLanguagePriority Prefer Fallback
+
+
+# Specify a default charset for all content served; this enables
+AddDefaultCharset UTF-8
+
+
+# If the AddEncoding directives above are commented-out, then you
+AddType application/x-compress .Z
+AddType application/x-gzip .gz .tgz
+
+#   MIME-types for downloading Certificates and CRLs
+AddType application/x-x509-ca-cert .crt
+AddType application/x-pkcs7-crl    .crl
+
+# AddHandler allows you to map certain file extensions to "handlers":
+#AddHandler cgi-script .cgi
+
+# For files that include their own HTTP headers:
+#AddHandler send-as-is asis
+
+# For type maps (negotiated resources):
+AddHandler type-map var
+
+
+# Filters allow you to process content before it is sent to the client.
+AddType text/html .shtml
+AddOutputFilter INCLUDES .shtml
+
+
+# Putting this all together, we can internationalize error responses.
+
+Alias /error/ "/var/www/error/"
+
+<IfModule mod_negotiation.c>
+<IfModule mod_include.c>
+    <Directory "/var/www/error">
+        AllowOverride None
+        Options IncludesNoExec
+        AddOutputFilter Includes html
+        AddHandler type-map var
+        Order allow,deny
+        Allow from all
+        LanguagePriority en es de fr
+        ForceLanguagePriority Prefer Fallback
+    </Directory>
+
+</IfModule>
+</IfModule>
+
+
+# The following directives modify normal HTTP response behavior to
+BrowserMatch "Mozilla/2" nokeepalive
+BrowserMatch "MSIE 4\.0b2;" nokeepalive downgrade-1.0 force-response-1.0
+BrowserMatch "RealPlayer 4\.0" force-response-1.0
+BrowserMatch "Java/1\.0" force-response-1.0
+BrowserMatch "JDK/1\.0" force-response-1.0
+
+
+# The following directive disables redirects on non-GET requests for
+BrowserMatch "Microsoft Data Access Internet Publishing Provider" redirect-carefully
+BrowserMatch "MS FrontPage" redirect-carefully
+BrowserMatch "^WebDrive" redirect-carefully
+BrowserMatch "^WebDAVFS/1.[0123]" redirect-carefully
+BrowserMatch "^gnome-vfs/1.0" redirect-carefully
+BrowserMatch "^XML Spy" redirect-carefully
+BrowserMatch "^Dreamweaver-WebDAV-SCM1" redirect-carefully
+
+
+# Use name-based virtual hosting.
+NameVirtualHost *:80
+
+#IncludeOptional conf.d/*.conf
+#ServerName 127.0.0.1
+ServerName 192.168.1.2
+
+
+login as: metelkov
+metelkov@172.18.148.239's password:
+Access denied
+metelkov@172.18.148.239's password:
+Access denied
+metelkov@172.18.148.239's password:
+Access denied
+metelkov@172.18.148.239's password:
+Access denied
+metelkov@172.18.148.239's password:
+Access denied
+metelkov@172.18.148.239's password:
+Last login: Wed May  4 07:52:59 2022 from 172.18.148.100
+[metelkov@centos ~]$ sudo su
+[sudo] password for metelkov:
+metelkov is not in the sudoers file.  This incident will be reported.
+[metelkov@centos ~]$ su
+Пароль:
+su: неправильный пароль
+[metelkov@centos ~]$ su
+Пароль:
+[root@centos metelkov]# mc
+/tmp/mc-root/mcext51DRjF: line 2: zgv: команда не найдена
+
+[root@centos conf]# cp httpd.conf 111
+[root@centos conf]# nano 111
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]# nano 111
+[root@centos conf]# nano httpd.conf
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#                                                          [ Записано 799 строк ]
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]# ll
+итого 148
+-rw-r--r--  1 root root 11937 Май 24 11:14 111
+-rw-r--r--  1 root root 34568 Июл 17  2020 httpd.conf
+-rw-r--r--  1 root root 34921 Ноя  7  2018 httpd.conf_modif_001
+-rw-r--r--  1 root root 10603 Ноя  8  2018 httpd.conf_old
+-rw-r--r--  1 root root 34499 Окт 29  2018 httpd.conf_orig
+-rw-r--r--. 1 root root 13139 Июн 19  2018 magic
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]# nano 111
+[root@centos conf]# pwd
+/etc/httpd/conf
+[root@centos conf]# ll
+итого 148
+-rw-r--r--  1 root root 11937 Май 24 11:14 111
+-rw-r--r--  1 root root 34568 Июл 17  2020 httpd.conf
+-rw-r--r--  1 root root 34921 Ноя  7  2018 httpd.conf_modif_001
+-rw-r--r--  1 root root 10603 Ноя  8  2018 httpd.conf_old
+-rw-r--r--  1 root root 34499 Окт 29  2018 httpd.conf_orig
+-rw-r--r--. 1 root root 13139 Июн 19  2018 magic
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]#
+[root@centos conf]# rm -f 111
+[root@centos conf]# cd ..
+[root@centos httpd]# ll
+итого 12
+drwxr-xr-x. 2 root root 4096 Сен  6  2018 alias
+drwxr-xr-x. 2 root root 4096 Май 24 13:35 conf
+drwxr-xr-x. 2 root root 4096 Июл 17  2020 conf.d
+lrwxrwxrwx. 1 root root   19 Сен  6  2018 logs -> ../../var/log/httpd
+lrwxrwxrwx. 1 root root   29 Сен  6  2018 modules -> ../../usr/lib64/httpd/modules
+lrwxrwxrwx. 1 root root   19 Сен  6  2018 run -> ../../var/run/httpd
+[root@centos httpd]# cd conf.d/
+[root@centos conf.d]# ll
+итого 128
+-rw-r--r--. 1 root root  707 Дек  4  2015 auth_kerb.conf
+-rw-r--r--  1 root root  259 Ноя  9  2018 html.conf_pizdec
+-rw-r--r--  1 root root  369 Ноя 23  2018 info.conf
+-rw-r--r--. 1 root root  295 Фев 19  2018 manual.conf
+-rw-r--r--. 1 root root  118 Май 20  2009 mod_dnssd.conf
+-rw-r--r--. 1 root root 9456 Мар 23  2017 nss.conf
+-rw-r--r--  1 root root 1796 Сен  7  2018 perl.conf
+-rw-r--r--. 1 root root  674 Мар 22  2017 php.conf
+-rw-r--r--. 1 root root  392 Июн 19  2018 README
+-rw-r--r--. 1 root root  845 Мар 22  2017 revocator.conf
+-rw-r--r--  1 root root  199 Май 29  2006 sarg.conf
+-rw-r--r--  1 root root  373 Ноя  9  2018 site1.conf
+-rw-r--r--  1 root root  388 Ноя  9  2018 site2.conf
+-rw-r--r--  1 root root  379 Ноя  8  2018 site2.conf_or
+-rw-r--r--  1 root root  258 Ноя  6  2018 site2.conf.orig
+-rw-r--r--  1 root root  537 Ноя  7  2018 site2.conf.ver01
+-rw-r--r--  1 root root  388 Ноя  9  2018 site3.conf
+-rw-r--r--  1 root root  388 Июл 17  2020 site4.conf
+-rw-r--r--  1 root root  388 Июл 17  2020 site5.conf
+-rw-r--r--  1 root root  388 Июл 17  2020 site6.conf
+-rw-r--r--  1 root root  388 Июл 17  2020 site7.conf
+-rw-r--r--  1 root root  388 Июл 17  2020 site8.conf
+-rw-r--r--  1 root root  388 Июл 17  2020 site9.conf
+-rw-r--r--. 1 root root  322 Мар 22  2017 squid.conf
+-rw-r--r--. 1 root root 9465 Фев 19  2018 ssl.conf
+-rw-r--r--. 1 root root  352 Сен  9  2004 webalizer.conf
+-rw-r--r--. 1 root root  299 Фев 19  2018 welcome.conf
+-rw-r--r--. 1 root root   43 Авг 15  2014 wsgi.conf
+[root@centos conf.d]# mc
+Файл: site1.conf        Строка 1 Позиция 0 373 байт                                                                                                                          100%
+
+*********
+конфиг одного тз сайтов (тут лежит конф каждого сайта) /etc/httpd/conf.d/site1.conf
+******
+
+<VirtualHost *:80>
+ServerName site1
+ServerAlias www.site1
+DocumentRoot /srv/www/
+CustomLog /srv/www/site1/access.log combined
+
+<Directory /srv/www/site1>
+        DirectoryIndex index.html
+
+#       Order deny,allow
+#       Deny from all
+#       Allow from 127.0.0.1
+#       Allow from ::1
+        # Allow from your-workstation.com
+
+AllowOverride All
+Order allow,deny
+Allow from all
+</Directory>
+
+</VirtualHost>

@@ -1,0 +1,19 @@
+безопасность домена
+
+https://winitpro.ru/index.php/2017/08/24/metody-zashhity-ot-mimikatz-v-domene-windows/
+https://winitpro.ru/index.php/2017/09/22/zashhita-administrativnyx-uchetnyx-zapisej-v-seti-windows/
+
+
+Корректное удаление контроллера домена в Active Directory
+
+https://winitpro.ru/index.php/2022/01/13/udalenie-kontrollera-domena-active-directory/
+
+Настраиваем резервное копирование контроллеров домена Active Directory
+
+https://winitpro.ru/index.php/2019/10/10/nastraivaem-backup-active-directory/
+
+Добавление дополнительного контроллера домена в существующий домен AD
+
+https://vmblog.ru/dobavlenie-dopolnitelnogo-kontrollera-domena-v-sushhestvuyushhij-domen-ad/
+
+

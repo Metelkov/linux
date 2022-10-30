@@ -1,0 +1,304 @@
+nginx   -  serverblock    (UBUNTU)
+
+(делать через location не очень хорошо, лучше на этом же сетевом интерфейсе поднять
+еще один ip адрес, но все же)
+все висит на одном ip, разделяется  " / "
+например 192.168.1.20/site1,  192.168.1.20/site2
+обращение по директории, можно сделать директорию и site1.com например
+
+
+
+apt install nginx
+
+
+смотрим, что доступно в фаерволе
+ufw app list
+ufw app status
+
+смотрим активен ли вообще фаервол
+ufw status
+
+смотрим активен ли nginx
+systemctl status nginx
+
+
+
+
+создаем директории которые будут отвечать за наши сайты в /var/www/
+
+/var/www/
+├── html
+│   └── index.nginx-debian.html    - этот файл создается сам при установке nginx
+├── site01                         - это создаем мы
+│   └── index.html
+├── site02
+│   └── index.html
+├── site03
+│   └── site03.html
+├── site04                         - покапустые - не задействованы
+└── site05
+
+
+
+сделаем в каждой директории html файл, чтобы к нему обращаться
+потом туда можно положить что то полноценное
+
+echo "<h1>Site 01 nginx</h1>" > /site01/thml/index.thml
+echo "<h1>Site 02 nginx</h1>" > /site02/thml/index.thml
+echo "<h1>Site 03 nginx</h1>" > /site03/thml/index.thml
+
+
+
+делаем резервную копию конфига в /etc/nginx
+смотрим, что есть в директориях
+
+*********************************
+
+   conf.d              -пустой
+   modules-avalilable  -пустой
+
+   modules-enabled     -содержит ссылки:
+lrwxrwxrwx 50-mod-http-geoip2.conf -> /usr/share/nginx/modules-available/mod-http-geoip2.conf
+lrwxrwxrwx 50-mod-http-image-filter.conf -> /usr/share/nginx/modules-available/mod-http-image-filter.conf
+lrwxrwxrwx 50-mod-http-xslt-filter.conf -> /usr/share/nginx/modules-available/mod-http-xslt-filter.conf
+lrwxrwxrwx 50-mod-mail.conf -> /usr/share/nginx/modules-available/mod-mail.conf
+lrwxrwxrwx 50-mod-stream.conf -> /usr/share/nginx/modules-available/mod-stream.conf
+lrwxrwxrwx 70-mod-stream-geoip2.conf -> /usr/share/nginx/modules-available/mod-stream-geoip2.conf
+
+
+    sites-available   -содержит файлы:
+default
+default.orig
+site01
+site01.conf
+site01.old
+site02
+site02.conf
+
+    содержимое site01:
+server {
+        listen 80; #default_server;
+#       listen [::]:80; #default_server;
+
+#       root /var/www/site01/html;
+
+        index index.html index.htm index.nginx-debian.html;
+
+#       server_name site01 www.site01;
+
+        location /site01 {
+                root /var/www/site01;
+                try_files $uri $uri/ =404;
+        }
+        location /site02 {
+                root /var/www/site02;
+                try_files $uri $uri/ =404;
+        }
+
+
+}
+
+    содержимое site01.conf:
+        location /site01/ {
+             root /var/www;
+             try_files $uri $uri/ =404;
+        }
+
+
+    sites-enabled   -содержит ссылки
+lrwxrwxrwx site01 -> /etc/nginx/sites-available/site01
+lrwxrwxrwx site01.conf -> /etc/nginx/sites-available/site01.conf
+lrwxrwxrwx site02 -> /etc/nginx/sites-available/site02
+lrwxrwxrwx site02.conf -> /etc/nginx/sites-available/site02.conf
+
+    snippets        -содержит файлы
+-rw-r--r-- 1 fastcgi-php.conf
+-rw-r--r-- 1 snakeoil.conf
+
+
+-----------------------------------------------------
+САМ КОНФИГ
+-----------------------------------------------------
+для читаемости можно удалить закоментированные строки, но я это делать не буду
+
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+        worker_connections 768;
+        # multi_accept on;
+}
+
+http {
+
+        ##
+        # Basic Settings
+        ##
+
+        sendfile on;
+        tcp_nopush on;
+        types_hash_max_size 2048;
+        # server_tokens off;
+
+        #raskommentiruen nizhe stroku
+         server_names_hash_bucket_size 64;
+        # server_name_in_redirect off;
+
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        ##
+        # SSL Settings
+        ##
+
+У МЕНЯ НЕТ ШИФРОВАНИЯ (ПОКА) И SSL, ПОЭТОМУ КОММЕНТИРУЕМ ЛИШНЕЕ
+
+#       ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3; # Dropping SSLv3, ref: POODLE
+#       ssl_prefer_server_ciphers on;
+
+        ##
+        # Logging Settings
+        ##
+
+        access_log /var/log/nginx/access.log;
+        error_log /var/log/nginx/error.log;
+
+        ##
+        # Gzip Settings
+        ##
+
+        gzip on;
+
+        # gzip_vary on;
+        # gzip_proxied any;
+        # gzip_comp_level 6;
+        # gzip_buffers 16 8k;
+        # gzip_http_version 1.1;
+        # gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+        ##
+        # Virtual Host Configs
+        ##
+
+МЕСТА КОНФИГОВ, МОГУТ НЕ БЫТЬ ПО УМОЛЧАНИЮ, ЕСЛИ ЕСТЬ - ОТКЛЮЧИМ, У НАС ОНИ В ДРУГОМ МЕСТЕ
+
+#       include /etc/nginx/conf.d/*.conf;
+#       include /etc/nginx/sites-enabled/*;
+        server {
+                listen 80; #default_server;
+
+КОММЕНТИРУЕМ ДЛЯ IP V6
+
+#       listen [::]:80; #default_server;
+
+
+ЕСЛИ ЭТО ВКЛЮЧИТЬ, ТО БУДЕТ ОТДАВАТЬСЯ ВООБЩЕ ВСЕ СОДЕРЖИМОЕ ВО ВСЕХ ПАПКАХ РУТА
+
+#       root /var/www/site01/html;
+
+                 index index.html index.htm index.nginx-debian.html;
+
+
+ВКЛЮЧАЕМ РАЗРЕШЕНИЕ ЧИТАТЬ ИЗ ЭТОЙ ПАПКИ КОНФИГИ - РАЗРЕШЕНИЕ НА ЗАПУСК НАШИХ САЙТОВ
+(server_name site01 www.site01;)
+
+        include /etc/nginx/sites-enabled/*.conf;
+        }
+}
+
+#mail {
+#       # See sample authentication script at:
+#       # http://wiki.nginx.org/ImapAuthenticateWithApachePhpScript
+#
+#       # auth_http localhost/auth.php;
+#       # pop3_capabilities "TOP" "USER";
+#       # imap_capabilities "IMAP4rev1" "UIDPLUS";
+#
+#       server {
+#               listen     localhost:110;
+#               protocol   pop3;
+#               proxy      on;
+#       }
+#
+#       server {
+#               listen     localhost:143;
+#               protocol   imap;
+#               proxy      on;
+#       }
+#}
+
+
+-------------------------------
+УБЕРЕМ ВСЕ КОММЕНТАРИИ И ПОЛУЧИМ ЧИСТЫЙ КОНФИГ
+--------------------------------
+
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+        worker_connections 768;
+        # multi_accept on;
+}
+
+http {
+        sendfile on;
+        tcp_nopush on;
+        types_hash_max_size 2048;
+
+         server_names_hash_bucket_size 64;
+
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        access_log /var/log/nginx/access.log;
+        error_log /var/log/nginx/error.log;
+
+        gzip on;
+
+        server {
+                listen 80; #default_server;
+                index index.html index.htm index.nginx-debian.html;
+        include /etc/nginx/sites-enabled/*.conf;
+        }
+}
+
+-----------------------------
+КОНФИГИ САМИЗ САЙТОВ
+root@monitor:/etc/nginx# cat ./sites-available/site01.conf
+-----------------------------
+
+        location /site01/ {
+             root /var/www;
+             try_files $uri $uri/ =404;
+        }
+
+ЭТОГО ДОСТАТОЧНО, ЧТОБЫ САЙТ СТАЛ РАБОТАТЬ
+
+ДАЛЕЕ ДЕЛАЕМ ССЫЛКУ - ПУТИ ДОЛЖНЫ БЫТЬ ПОЛНЫМИ
+
+ln -s /etc/nginx/sites-available/site01.conf /etc/nginx/sites-enabled/
+
+САМИ САЙТЫ ЛЕЖАТ ТУТ
+
+root@monitor:/etc/nginx# tree /var/www/
+/var/www/
+├── html
+│   └── index.nginx-debian.html     -САЙТ КОТОРЫЙ ПОКАЗЫВАЕТСЯ ИЗНАЧАЛЬНО
+├── site01
+│   └── index.html
+├── site02
+│   └── index.html
+├── site03
+│   └── site03.html
+├── site04
+└── site05
+
+ПОСЛЕ КАЖДОГО ИЗМЕНЕНИЯ КОНФИГА - ПЕРЕЗАПУСКАТЬ NGINX
+systemctl restart nginx
+
+ПРОВЕРИТЬ, ПРАВИЛЬНО ЛИ СОЗДАНЫ КОНФИГИ
+nginx -t
