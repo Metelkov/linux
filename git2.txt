@@ -249,3 +249,36 @@ git pull origin master - стянуть к себе изменения с сер
 
 
 git fetch origin  - с локальным репозиторием ничего не произойдет, но скачается с origin все, что там было изменено и передвинется локально ветка слежения, потом, чтобы увидеть изменение нужно слить свою и удаленную ветку - git merge origim/master , потом можно делать свой push
+
+
+
+
+-----------проблемы -------
+если получаем сообщение 
+Hi *****! You've successfully authenticated, but GitHub does not provide shell access.
+Connection to ssh.github.com closed.
+И самое главное git push не работает.
+
+Решение:
+1. Вариант №1
+Скорей всего у вас origin ведет на https, такое может быть, если вы проект клонили через
+git clone https://github.com/somerepo
+когда надо было так:
+
+git clone git@github.com:somerepo
+Проверьте командой
+
+git remote -v
+Сменить можно так
+
+git remote set-url origin git@github.com:metelkov/temp.git
+
+так же в конфиге ssh указать какой ключ использовать - внимание на отступ
+nano ~/.ssh/config 
+
+Host github.com
+    IdentityFile ~/.ssh/id_ed25519
+
+
+тестируем подключение
+ssh -T git@github.com
