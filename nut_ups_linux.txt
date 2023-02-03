@@ -1,0 +1,502 @@
+Настройка ИБП Network UPS Tools (NUT)
+
+примере ИБП Eaton 5E650iUSB  и FSP
+
+1. Для начала следует установить NUT:
+apt install nut
+
+2. Сделаем резерную копию папки с файлами конфигурации NUT (в этой папки одни конфиги):
+cp -r /etc/nut /etc/nut.orig
+
+3. Добавим директиву, указывающую, что ИБП подключен к данному компьютеру, а не к удаленному:
+echo "MODE=standalone" > /etc/nut/nut.conf
+
+chown root:nut /etc/nut/*
+chmod 640 /etc/nut/*
+
+4. Подключим ИБП к компьютеру и посмотрим вывод команды lsusb:
+lsusb
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 001 Device 004: ID 093a:2510 Pixart Imaging, Inc. Optical Mouse
+Bus 001 Device 003: ID 1a2c:2124 China Resource Semico Co., Ltd 
+Bus 001 Device 002: ID 0463:ffff MGE UPS Systems UPS
+
+в случае с FSP - виден только адрес порта
+root@testub:/etc/nut# lsusb
+Bus 002 Device 004: ID 1a2c:0042 China Resource Semico Co., Ltd 
+Bus 002 Device 003: ID 2a7a:938f  
+Bus 002 Device 005: ID 0665:5161 Cypress Semiconductor USB to Serial
+Bus 002 Device 002: ID 8087:0024 Intel Corp. Integrated Rate Matching Hub
+Bus 002 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 8087:0024 Intel Corp. Integrated Rate Matching Hub
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+
+
+5. конфиги
+Различие между Debian и RHEL6 дистрибутивами только в том, что конфигурационные файлы в 1м случае лежат в /etc/nut, а во 2м - в /etc/ups
+Переходим в папку с конфигами (cd /etc/ups или cd /etc/nut) 
+
+В     nut.conf     только
+MODE=standalone
+
+В     ups.conf     в конец дописываем
+[FSP]					-Имя ИБП в NUT. Именно по нему мы будем посылать команды ИБП, в 
+					примере может называться [eaton]
+driver = blazer_usb			-Используемый драйвер, может быть usbhid-ups или другой
+
+langid_fix = 0x409			-Для драйвера blazer_usb - если не будет работать сразу,
+					то написать эту строчку
+port = auto				-Порт подключения. Что то менять в ней нужно только для 
+					специфических ИБП
+offdelay = 12				-Время в секундах до автоматического отключения ПК
+
+ondelay = 6				-Время автоматического включения в минутах после команды 
+					отключения ПК (вкл в BIOS wake on lan / AC Power Lost)
+desc = "FSP EP650"			-Описание ИБП
+
+#default.baterry.voltage.nominal = 12	-Если не определяется автоматически - дописываем
+
+default.battery.voltage.high = 13.00	-Если не определяется автоматически - дописываем
+
+default.battery.voltage.low = 11.00	-Если не определяется автоматически - дописываем
+
+
+В     upsd.conf     (раскомментируем строки)
+MAXAGE 25				-По умолчанию 15 сек, нужно если возникает ошибка (см ниже)
+					частота обновления данных клиентов после остановки драйвера UPS
+
+LISTEN 127.0.0.1 3493
+
+В     upsd.users     раскоментируем и изменим
+	[admin]					-доступ у ups имя
+		password = administrator	-доступ у ups пароль
+		actions = SET
+		instcmds = ALL
+
+
+	[upsmon]				-для мониторинга имя
+		password  = 12345678		-для мониторинга пароль
+		upsmon master
+
+
+В     upsmon.conf     раскомментируем и изменим
+RUN_AS_USER nut
+MONITOR myups@localhost 1 upsmon 12345678 master	(or slave)	-параметры из upsd.conf
+									upsmon -имя моинторинга
+									12345678 - пасс мониторинга
+									master - параметр мониторинга
+MONITOR FSP@localhost 1 upsmon 12345678 master	(or slave)	-в нашем случае
+
+MINSUPPLIES 1
+
+SHUTDOWNCMD "/sbin/shutdown -P +0"		- -P - параметр для выключения (h = halt)
+
+POLLFREQ 5
+POLLFREQALERT 5
+HOSTSYNC 15
+DEADTIME 15
+POWERDOWNFLAG /etc/killpower
+RBWARNTIME 43200
+NOCOMMWARNTIME 300
+FINALDELAY 5
+
+
+В     upssched.conf     сейчас только одна стр
+CMDSCRIPT /bin/upssched-cmd
+
+6. консольные команды
+upsc FSP@localhost		-опросить ups, FSP - имя ups в конфиге
+upsmon -c fsd			-тест отключения (выключит компьютер)
+nut-scanner			
+lsusb
+upsc FSP@localhost ups.status
+upsc ups.model
+upsdrvctl start
+upsdrvctl start
+
+
+7. запускаем сервис и мониторинг (нкжно создать скрипт запуска и его -> в автозагрузку)
+systemctl start nut-server
+systemctl enable nut-server
+systemctl status nut-server
+systemctl start nut-monitor
+systemctl enable nut-monitor
+
+mkdir -p /home/script					-создали директорию в кот леж 
+							скрипт
+!!!внимание на > и >> !!!!
+echo "systemctl start nut-server" > start_nut.sh	-тело скрипта
+echo "systemctl enable nut-server" >> start_nut.sh
+echo "systemctl start nut-monitor" >> start_nut.sh
+echo "systemctl enable nut-monitor" >> start_nut.sh
+
+chmod 755 start_nut.sh					-права на запуск
+
+nano /etc/rc.local					-создаем файлик rc.local и в него напишем
+							Над строкой exit 0 прописать 
+							название и путь до скрипта.
+#!/bin/sh -e
+#
+# rc.local
+#
+# This script is executed at the end of each multiuser runlevel.
+# Make sure that the script will "exit 0" on success or any other
+# value on error.
+#
+# In order to enable or disable this script just change the execution
+# bits.
+#
+# By default this script does nothing.
+
+/home/script/start_nut.sh				-наш запускаемый скрипт
+
+exit 0
+
+Делаем файл исполняемым:
+chmod +x /etc/rc.local
+
+Включение rc.local в автозагрузку
+systemctl enable rc-local
+
+
+
+если ошибок нет - то все будет работать
+
+проблемы:
+Вам нужно сделать реальный замер, на полнозаряженом акумуле(какая емкость?). Это максимальное время - ваш полный заряд. Задаете его в "Battery runtime will not be calculated (runtimecal not set)"
+
+В логах были ошибки от upsmon data stale
+Ребутнулся, все ок. Тест пройден. В логах были ошибки от upsmon data stale. Вроде пофиксилось в upsd.conf добавлением параметра «MAXAGE 25»
+Это также может произойти на некоторых платформах виртуализации. Если вы не можете воспроизвести проблему на физическом компьютере, сообщите об ошибке поставщику программного обеспечения для виртуализации.
+Если это происходит часто, вы можете подумать о включении DEADTIME в upsmon.conf, чтобы отключить некоторые предупреждения на более короткие интервалы. Будьте осторожны при настройке этого числа, так как оно напрямую влияет на то, как долго вы будете работать от батареи, не зная, что происходит с ИБП.
+Примечание: иногда для обновления некоторых драйверов требуется больше времени, чем позволяет значение MAXAGE по умолчанию (в upsd.conf). В результате они временно помечаются как устаревшие, хотя все в порядке. Это может произойти с оборудованием MGE Ellipse — см. man-страницы mge-shut или usbhid-ups. В таких случаях вы можете увеличить значение MAXAGE, чтобы избежать этих предупреждений; попробуйте значение 25 или 30.
+
+nut driver not connected
+Возможно, запись в ups.conf неверна или драйвер не запущен. Возможно, ваш путь состояния настроен неправильно. Проверьте свой системный журнал. upsd будет регулярно жаловаться, если не сможет соединиться с драйвером, и должен сказать, почему не может соединиться.
+Запустить upsdrvctl start для запуска драйверов после настройки ups.conf - Покажет ошибку
+В операционных системах с поддерживаемой структурой управления службами вы можете обернуть свои драйверы NUT в отдельные экземпляры служб с помощью повторной синхронизации upsdrvsvcctl, а затем управлять ими с помощью таких команд, как upsdrvsvcctl stop и upsdrvsvcctl start (обратите внимание, что в других системах этот инструмент может быть не установлен предварительно через упаковка).
+
+материал:
+https://habr.com/ru/post/443736/
+https://habr.com/ru/post/102032/
+http://laferont.blogspot.com/2014/03/nut-fsp-vesta-1500-debian-72.html
+https://forum.lissyara.su/soft-f3/network-ups-tools-t17735-s125.html#p339595
+https://www.altlinux.org/NUT
+https://docs.carbonsoft.ru/pages/viewpage.action?pageId=51380480s
+
+https://networkupstools.org/docs/FAQ.html
+
+----------------
+Что нужно знать перед настройкой UPS
+Если только собираетесь покупать UPS, то рекомендуется ознакомиться со списком совместимости nut — http://www.networkupstools.org/stable-hcl.html в фильтре указать интересующие параметры.
+1. ознакомиться со списком максимально совместимых UPS;
+2. определить тип подключения UPS. Это может быть USB, COM, Ethernet, other. Определить можно по спецификации UPS в инструкции пользователя, и/или визуально, при наличии необходимых знаний;
+3. если UPS один и подключается через USB (а так же максимально совместим с nut), то в настройках можно указать порт как "auto";
+4. если UPS не один, nut не может определить порт в режиме "auto", или тип подключения не через USB, то нужно выяснить порт, через который произведено подключение UPS;
+5. найти драйвер для вашего UPS по ссылке — http://www.networkupstools.org/ddl/ находите модель UPS и смотрите строку driver.name;
+6. если UPS в единственном числе и подключен на прямую к серверу, то нужно использовать standalone мод, если же схема другая (UPS подключен не напярмую, несколько ups), то nut нужно сконфигурировать под данную схему, обращайтесь в тех. поддержу;
+7. Не все UPS одинаково полезны! Некоторые UPS не могут, после обратного перехода с батареи на сеть, включить ПК.
+---------------
+еще вариант:
+иногда создают пользователя и группу с именем "nut", дать пользователю nut права root
+useradd nut
+usermod -a -G root nut
+
+yum install nut -y
+
+описание файлов:
+ups.conf - настройки nut для работы с UPS (драйвер/порт/наименование).
+upsd.conf - настройка основного демона upsd Network UPS Tools.
+upsd.users - контроль доступа к UPS демону (профили пользователей).
+upsmon.conf - настройка текущего клиентского агента.
+
+ups.conf
+Конфигурация подключенных UPS.
+
+[ups_name] - это имя используется как адрес вашего UPS. Вы можете его изменить на любое произвольное имя;
+driver - драйвер, используемый для работы с UPS;
+port - порт, на котором висит UPS (для подключения через USB указываете значение "auto"). Для snmp-ups: имя хоста SNMP агента. Для newhidups: значение "auto" для автоматического соединения с USB UPS;
+bus - канал/шина на котором расположен порт;
+desc - описание устройства;
+sdorder - необязательный элемент. При наличии нескольких UPS подключенных к этому серверу можно выключать UPS в определенном порядке. используя upsdrvctl к примеру можно выключить все 0s или 1s, 2s и тд. Для исключения последовательной остановки используйте -1;
+nolock - необязательный элемент, его не рекомендуется использовать в этом конфиге. Он служит для отключения блокировки порта при пользовании утилитой;
+maxstartdelay - необязательный элемент. Может быть, заданна как глобальная переменная выше вашего первого UPS. Это значение определяет, сколько upsdrvctl будет ожидать окончания запуска драйвера. Данная возможность предоставляет стабильность в работе. Значение по умолчанию равно 45 секундам;
+cable - Если драйвер UPS требует дополнительных параметров, вы можете указать их здесь. Не указывайте это значение, если ваше подключение к UPS стандартно.
+upsd.conf
+Служит для контроля доступа к серверу и для установки других значений конфигурации. Этот файл содержит подробные сведения о предоставлении доступа, таким образом, обеспечивается безопасность. В идеальном случае, только процесс upsd должен иметь возможность прочитать данные из этого файла.
+
+MAXAGE - по умолчанию 15 секунд. Это частота обновления данных клиентов после остановки драйвера UPS. Следует использовать другое значение только в том случае, если у вас трудности с обновлением данных;
+LISTEN address port - здесь указывается IP адрес и порт 3493 (по умолчанию) для прослушивания подключений;
+MAXCONN connections - по умолчанию используется 1024 подключений. Каждый UPS, каждого LISTEN адреса и каждого клиента считается как одно подключение. Если на сервере заполнится количество подключений, он больше не будет принимать новых входящих клиентских подключений.
+upsd.users
+Контроль доступа для UPS демона (профили пользователей). Именно в этом файле вы указываете, кто и в какой мере будет работать с nut.
+
+[NAME] - имя пользователя;
+password - пароль пользователя;
+actions - возможность настройки см ниже;
+instcmds - выполняемые команды см ниже;
+upsmon - вид подключения клиентов см ниже.
+Каждый UPS монитор может определяться как один из трех возможных типов:
+upsmon master - полные полномочия управления питанием подключенных к системе UPS. Отвечает за выключение разряженного аккумулятора. Выключение происходит после безопасного выключения всех slave мониторов. Если ваш UPS подключен непосредственно к системе через последовательный порт, то для upsmon этой системы следует определить его как master.
+
+upsmon slave - эта система, под управлением upsmon master и она не выключается непосредственно. Операционная система будет выключена перед отключением питания master. Используйте этот режим при запуске монитора на других серверах работающих на том же UPS. И очевидно, что только один сервер может быть подключен к последовательному порту на UPS, коим будет является master. Все остальные сервера будут slave.
+
+upsmon monitor-only - при этом режиме будут создаваться уведомления о состоянии или изменении работы батареи, переключении на линию и т.д., но не будет завершать работу системы.
+
+actions - Действия пользователя с применением upsd.
+
+SET - изменить значения определенных переменных в UPS;
+FSD - установка флага "принудительного выключения" для UPS.
+instcmds - разрешения пользователю на инициирование конкретных команд. Применяя "ALL" вы разрешаете использовать все команды, Существует множество команд выполните "upscmd -l  <имя UPS в настройках>" чтобы увидеть, что ваше оборудование поддерживает. Вот, к примеру, несколько команд.
+
+test.panel.start - старт теста передней панели
+test.battery.start - старт теста батареи
+test.battery.stop - остановка теста батареи
+calibrate.start - запуск калибровки батареи
+calibrate.stop - остановка калибровки батареи
+upsmon.conf
+Этот конфигурационный файл предоставляет основные функции в программе мониторинга UPS, например это безопасное завершение работы при сбое питания, уведомления и другие переменные. В многоуровневой схеме утилиты nut это клиент.
+
+MINSUPPLIES - указываем количество блоков питания которые должны получать мощность сохраняя систему запущенной. Большинство систем имеют один БП. Но дорогие сервера, например HP NetServer LH4 могут работать с 2 из 4 БП и ему нужно ставить 2;
+SHUTDOWNCMD - upsmon выполняет эту команду, когда систему необходимо выключить;
+POLLFREQ - опрос мониторами с частотой (измеряется в секундах) для обычной деятельности. Вы можете отрегулировать эту частоту опроса, чтобы upsmon не “зашумлял” вашу сеть, но не вносите слишком большие значения тк. оно может пропустить отключение питания;
+POLLFREQALERT - опрос UPS с частотой в секундах. Можно сделать значение поменьше, чем POLLFREQ для лучшей чувствительности работы батареи;
+HOSTSYNC - как долго upsmon будет ждать перед переходом к следующему upsmon. master upsmon использует это число при ожидании slaves чтобы отключиться после того как он установил флаг принудительное завершение работы (FSD). И если slaves не отключаться после этого тайм аута, то выключение продолжится без них;
+DEADTIME - интервал ожидания перед объявлением статуса UPS как «мертвый». Upsmon требует, чтобы UPS предоставлял свою статус информацию, каждые несколько секунд (см. POLLFREQ и POLLFREQALERT). Если статус загрузки, UPS помечен fails. И если оно остается fails более чем DEADTIME секунд, то UPS помечается как «мертвый». Выставляйте значение этой переменной в несколько (в три раза пойдет) раз больше чем POLLFREQ и POLLFREQALERT;
+POWERDOWNFLAG - флаг файла для форсирования завершения работы UPS в master системе;
+NOTIFYMSG - изменение сообщения, отправленные upsmon при возникновении определенных событий;
+NOTIFYCMD - upsmon отправляет сообщение при происшествиях;
+NOTIFYFLAG - изменение поведения upsmon при возникновении событий NOTIFY;
+RBWARNTIME - предупреждение замены аккумулятора в секундах;
+NOCOMMWARNTIME - предупреждение по времени при не общении к UPS в секундах;
+FINALDELAY - через сколько выполнить SHUTDOWNCMD.
+
+тут конфиг не проверен, в отлич. от верхнего, но на всякий случай пусть будет (этот конф работает с биллингом, чтобы данные не потерялись - биллинг останавливают)
+
+Пример настройки nut
+0. обязательно прочитать заметки!
+
+1. Указываем nut,  то есть что UPS один и подключен на прямую к серверу ;
+
+vim /etc/ups/nut.conf
+— далее изменяем переменную
+MODE = standalone
+2. Добавляем UPS (в качестве примера был выбран APC Black-UPS ES 700);
+
+vim /etc/ups/ups.conf
+— добавляем строки
+[apces700]
+       driver =  usbhid-ups
+       desc = "Back-UPS ES 700"
+       bus = "004"
+       port = "005"
+       vendorid = 051d
+       productid = 0002
+В случае, если управление ups будет происходить по snmp, данный файл будет выглядеть примерно следующим образом:
+
+[apces700]
+        driver = snmp-ups
+        port = 10.0.0.1
+        community = public
+        snmp_version = v1
+        pollfreq = 15
+        desc = "Example SNMP v1 device"
+Где 10.0.0.1 - ip адрес, по которому доступен ups.
+По совместимости Вашего ИБП с драйвером можете обратиться к документации драйвера http://networkupstools.org/docs/man/snmp-ups.html
+
+В некоторых случаях при настройке подключения через COM порт достаточно параметров.
+
+[apces700]
+        driver = serial
+        desc = "Back-UPS ES 700"
+        port = /dev/ttyS0
+	При использовании переходника USB-to-Serial порт нужно указать такой:
+port = /dev/ttyUSB0
+3. Устанавливаем IP и порт, на котором демон, будет принимать данные о состоянии UPS;
+
+vim /etc/ups/upsd.conf
+— добавляем строки
+LISTEN 127.0.0.1 3493
+4. Добавляем пользователя, от имени которого будет производится мониторинг и отправка команд в систему;
+
+useradd upsuser
+passwd upsuser
+5. Добавляем созданного пользователя в настройки;
+
+	Если в пароле используются спецсимволы, например №!#%^& - в о всех конфигурационных файлах пароль следует заключать в кавычки:
+password = 'my!#%password'
+vim /etc/ups/upsd.users
+— добавляем строки
+[upsuser]
+   password = password
+   actions = SET
+   instcmds = ALL
+   upsmon master
+6. Устанавливаем основные настройки nut;
+vim /etc/ups/upsmon.conf
+— добавляем строки
+MONITOR apces700@localhost 1 upsuser password master
+MINSUPPLIES 1
+SHUTDOWNCMD "/sbin/shutdown -h +0"
+NOTIFYCMD /usr/sbin/upssched
+POLLFREQ 5
+POLLFREQALERT 5
+HOSTSYNC 15
+DEADTIME 15
+POWERDOWNFLAG /etc/killpower
+NOTIFYMSG ONLINE     "UPS %s on line power"
+NOTIFYMSG ONBATT     "UPS %s on battery"
+NOTIFYMSG LOWBATT    "UPS %s battery is low"
+NOTIFYMSG FSD        "UPS %s: forced shutdown in progress"
+NOTIFYMSG COMMOK     "Communications with UPS %s established"
+NOTIFYMSG COMMBAD    "Communications with UPS %s lost"
+NOTIFYMSG SHUTDOWN   "Auto logout and shutdown proceeding"
+NOTIFYMSG REPLBATT   "UPS %s battery needs to be replaced"
+NOTIFYMSG NOCOMM     "UPS %s is unavailable"
+NOTIFYMSG NOPARENT   "upsmon parent process died - shutdown impossible"
+NOTIFYFLAG ONLINE    SYSLOG+EXEC
+NOTIFYFLAG ONBATT    SYSLOG+EXEC
+NOTIFYFLAG LOWBATT   SYSLOG+EXEC
+NOTIFYFLAG FSD       SYSLOG+EXEC
+NOTIFYFLAG COMMOK    SYSLOG+EXEC
+NOTIFYFLAG COMMBAD   SYSLOG+EXEC
+NOTIFYFLAG SHUTDOWN  SYSLOG+EXEC
+NOTIFYFLAG REPLBATT  SYSLOG+EXEC
+NOTIFYFLAG NOCOMM    SYSLOG+EXEC
+NOTIFYFLAG NOPARENT  SYSLOG+EXEC
+NOCOMMWARNTIME 300
+FINALDELAY 0
+7. Запускаем демон;
+
+service ups start
+8. Проверяем возможности UPS;
+
+upscmd -l apces700@localhost
+ИЛИ
+
+upscmd apces700@localhost
+9. Настраиваем планировщик nut;
+
+vim /etc/ups/upssched.conf
+— добавляем
+CMDSCRIPT /etc/ups/cmd.sh
+PIPEFN /tmp/upspipe
+LOCKFN /tmp/upslock
+AT COMMBAD * EXECUTE commbad
+AT COMMOK * EXECUTE commok
+AT NOCOMM * EXECUTE nocomm
+AT ONBATT * EXECUTE powerout
+AT ONBATT * START-TIMER shutdownnow 90
+AT LOWBATT * EXECUTE shutdowncritical
+AT ONLINE * CANCEL-TIMER shutdownnow
+AT ONLINE * EXECUTE powerup
+10. Создаем скрипт поведения UPS при штатных ситуациях;
+
+touch /etc/ups/cmd.sh
+chmod 777 /etc/ups/cmd.sh
+vim /etc/ups/cmd.sh
+- добавляем
+
+#!/bin/bash
+case $1 in
+      commbad)
+      logger  "UPS communications failure"
+      ;;
+      commok)
+      logger  "UPS communications restored"
+      ;;
+      nocomm)
+      logger  "UPS communications cannot be established"
+      ;;
+      powerout)
+      logger "UPS on battery. Shutdown in 90 seconds...."
+      upscmd -u upsuser -p password apces700@localhost shutdown.return
+      ;;
+      shutdownnow)
+      logger "UPS has been on battery for 90 seconds. Starting orderly shutdown"
+      /etc/init.d/apps stop
+      /sbin/shutdown -h now
+      ;;
+      shutdowncritical)
+      logger "UPS battery level CRITICAL. Shutting down NOW!!!!"
+      /sbin/shutdown -h now
+      ;;
+      powerup)
+      logger "UPS on line. Shutdown aborted."
+      upscmd -u upsuser -p password apces700@localhost shutdown.stop
+      ;;
+      *)
+      logger "Unrecognized command: $1"
+      ;;
+esac
+11. Добавляем демон в автозагрузку;
+
+chkconfig --level 35 ups on
+12. Проверяем состояние UPS.
+
+upsc apces700@localhost
+13. Запускаем скрипт проверки UPS
+
+check_ups_status.sh
+Заметки
+Внимательно просмотрите листинги, <имя_пользователя>, <ваш_пароль>, <имя_UPS> — это абстрактное обозначение Ваших данных, так же не надо печатать угловые скобки, т.е. попытка ввода в настройки nut строчек типа: <имя_пользователя>, <имя_UPS>, <etc>... — приведет к ошибкам/некорректной работе;
+Если схема подключения отличается от "эталонной", то при возникновении затруднений — обратиться в техподдержку;
+Если UPS один и подключается через USB, то в настройках можно указать порт ("port") как "auto" и не вводить "bus";
+Что бы узнать номер порта и шины UPS, можно воспользоваться утилитой lsusb (если UPS подключен через USB), другие варианты подключения (COM, Ethernet) нужно настраивать индивидуально;
+Нужный драйвер можно посмотреть на странице проекта — http://www.networkupstools.org/ddl/, находите модель UPS и смотрите строку driver.name;
+Все параметры настройки UPS можно посмотреть в разделе "Конфигурационные файлы" — пункт "ups.conf"
+В зависимости от списка команд можно гибко настраивать поведение UPS, если драйвер/UPS поддерживает то или иное действие;
+shutdown.return — данную опцию нужно проверять командой: upscmd -l <имя_UPS>@localhost
+Драйвер для Вашего устройства или производителя устройства можно попробовать найти в файле /usr/share/driver.list, например:
+cat /usr/share/driver.list | grep -i Smart-UPS
+Вывод, в котором выведены драйвера с которыми можно попробовать интегрировать APC Smart-UPS:
+
+"APC"	"ups"	"1"	"Smart-UPS"	""	"apcsmart"
+"APC"	"ups"	"2"	"Smart-UPS USB"	"USB"	"usbhid-ups"
+"APC"	"ups"	"3"	"Smart-UPS RT XL"	"AP9618 SNMP monitoring card"	"snmp-ups"
+Проверка подсистемы
+Пр окончанию настройки требуется выполнить итоговую проверку работоспособности схемы:
+
+Выполните остановку биллинга во избежание потери данных
+/etc/init.d/apps stop
+По завершении остановки сервисов биллинга, убедитесь, что UPS подключен и функционирует
+# upsc -L
+apces700: Back-UPS ES 700
+Запустите мониторинг системного лога
+tail -f -n 0 /var/log/messages | grep -Ei 'ups|shut'
+Отключите UPS от сети.
+Сообщения в логе должны выглядеть приблизительно так:
+upsmon[1393]: UPS apces700@localhost on battery
+upssched[22505]: Executing command: powerout
+logger: UPS on battery. Shutdown in 90 seconds....
+upsd[1388]: Instant command: ups@127.0.0.1 did shutdown.return on apces700
+upssched[22509]: Timer daemon started
+upssched[22509]: New timer: shutdownnow (90 seconds)
+usbhid-ups[1384]: instcmd: command [shutdown.return] handled
+По истечении 90 секунд, сервер должен выключиться.
+
+При успешном завершении работы, тест можно считать пройденным. При возникновении каких-либо ошибок, обратитесь в техподдержку CarbonSoft.
+
+
+
+Если платформа корректно завершает работу, но сервер не выключается, а уходит в перезагрузку.
+Это может возникнуть по причине того что драйвер не распознает комнаду shutdown (не путать с shutdown.return), выполняемую стандартными скриптами CentOS 6 при выключении:
+
+Для решения проблемы найдите в скрипте /etc/init.d/halt строку с текстом "Shutdown UPS drivers" и приведите скрипт к следующему виду:
+
+# Shutdown UPS drivers
+if [ "$command" = /sbin/halt -a -f /etc/sysconfig/ups ]; then
+        . /etc/sysconfig/ups
+        if [ -z $POWERDOWNFLAG ]; then
+                POWERDOWNFLAG=/etc/killpower
+        fi
+        if [ "$SERVER" = "yes" -a -f $POWERDOWNFLAG ]; then
+                #/sbin/upsdrvctl shutdown
+                #sleep 120
+                #/sbin/reboot --force
+                :
+        fi
+fi
+Изменены тут три строчки в последнем "if": закоментирована отправка shutdown драйверу.
