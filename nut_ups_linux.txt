@@ -84,6 +84,8 @@ LISTEN 127.0.0.1 3493
 В     upsmon.conf     раскомментируем и изменим
 RUN_AS_USER nut
 MONITOR myups@localhost 1 upsmon 12345678 master	(or slave)	-параметры из upsd.conf
+									myups - имя нашего UPS - в нашем
+									влучае FSP (см конфиг выше)
 									upsmon -имя моинторинга
 									12345678 - пасс мониторинга
 									master - параметр мониторинга
