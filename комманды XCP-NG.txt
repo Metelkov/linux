@@ -1,0 +1,370 @@
+комманды XCP-NG
+	XenServer Commands List - Virtual Machines
+
+
+	Shell
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+List of available virtual machines (Список доступных виртуальных машин)
+xe vm-list
+
+Get uuids of all running VMs (Получить uuid всех запущенных виртуальных машин)
+xe vm-list is-control-domain=false power-state=running params=uuid
+
+Force shutdown a virtual machine (Принудительно отключить виртуальную машину)
+xe vm-reset-powerstate uuid=uuid-of-the-VM force=true
+
+Shutdown VM (Выключить ВМ)
+xe vm-shutdown vm=<uuid>
+
+Suspend VM (Приостановить ВМ)
+xe vm-suspend vm=<uuid>
+
+List all the parameters available on the selected host (Список всех параметров, доступных на выбранном хосте)
+xe vm-param-list uuid=1b334f12-66cf-73cc-b0f9-3059519ace27
+
+
+	CPUs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Set the number of cores with: (Установите количество ядер с помощью)
+xe vm-param-s<wbr/>et platform:c<wbr/>ores-per-soc<wbr/>ket=4 uuid=xxxxx<wbr/>x
+
+Set the number of CPUS at startup: (Установите количество CPUS при запуске:)
+xe vm-param-s<wbr/>et VCPUs-at-s<wbr/>tartup=8 uuid=xxxxx<wbr/>x
+
+Set the max number of CPUS: (Установите максимальное количество CPUS:)
+xe vm-param-s<wbr/>et VCPUs-max=<wbr/>8 uuid=xxxxx<wbr/>xx
+
+
+	Hosts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+List hosts (Список хостов)
+xe host-list
+
+Shutdown host (Выключить хост)
+xe host-shutdown host=<uuid>
+
+Remove Host from Pool (Удалить хост из пула)
+xe host-forget uuid=<toasted_host_uuid>
+
+Get Pool Master UUID (Получить UUID мастера пула)
+xe pool-list params=master | egrep -o "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}"
+
+Eject host from pool (Исключить хост из пула)
+xe pool-eject host-uuid=9712025f-9b98-4c25-81ef-9222993b71f9
+
+Get VMs running on specified host (Получить виртуальные машины, работающие на указанном хосте)
+xe vm-list resident-on=<host uuid=""> is-control-domain=false
+
+Pending tasks: (Незавершенные задачи)
+1.  xe task-list #to view the Pending tasks
+2.  xe task-cancel force=true uuid=<UUID> #to cancel a specific task
+
+
+Last resort: (Крайнее средство)
+xe-toolstack-restart
+
+
+	Networking
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Lists networks (Списки сетей)
+xe network-list
+
+Lists Physical Network Cards with specified MAC Address (Список физических сетевых карт с указанным MAC-адресом)
+xe pif-list MAC=1c:c1:de:6b:9f:22
+
+Create a new Network (Создать новую сеть)
+xe network-create name-label=VLAN_DMZ
+
+Assign a network to a Physical Network Card with a VLAN (Назначьте сеть физической сетевой карте с помощью VLAN)
+xe vlan-create network-uuid=329b55d1-0f77-512a-63ed-8b6bcf429e99 pif-uuid=80c1ea1a-4beb-c1ee-f69d-14e3a699587e vlan=205
+
+
+	Backups
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Export VM or snapshot to XVA (Экспорт виртуальной машины или моментального снимка в XVA)
+xe vm-export vm=<uuid_or_name> filename=/backup/backup.xva
+
+Import XVA file (Импорт XVA-файла)
+xe vm-import vm=<name> filename=/backup/backup.xva
+
+Create a snapshot (Создать снимок)
+xe vm-snapshot vm="<vm_name>" new-name-label="snapshot_name"
+
+Convert snapshot to template (Преобразование снимка в шаблон)
+xe snapshot-copy uuid=<snapshot_uuid> sr-uuid=<sr_uuid> new-name-description="Description" new-name-label="Template Name"
+
+
+Принудительная остановка зависшей виртуальной машины на Xen:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+xe task-list
+xe task-cancel uuid=[task uuid]
+xe-toolstack-restart
+xe vm-shutdown force=true uuid=[vm uuid]
+
+
+Автозапуск VM-ок
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Сначала включаем из командной строки самого хоста:
+# xe pool-param-set uuid= other-config:auto_poweron=true
+
+Потом включаем для самой виртуалки:
+# xe vm-param-set uuid= other-config:auto_poweron=true
+
+
+Если виртуальная машина "застряла" и не выключается
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Определяем ID её домена:
+# xl list (смотрим на столбец ID напротив имени машинки, это просто число)
+или даже
+# xl list | grep MyMachine
+Грохаем её домен:
+# xl destroy ID
+Эта команда отдаст распоряжение системе принудительно выключить виртуалку.
+Полезные команды
+xe-toolstack-restart - перезагружает обвязку управления, не затрагивая сами виртуалки
+
+
+
+Проброс блочных устройств в VM
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Это скорее надо не для внешних, а для внутренних хардов, установленных в тот же сервер.
+Для начала создаём каталог, в котором будут симлинки на нужные нам блочные устройства:
+# mkdir /srv/block-devices
+Теперь делаем его SR типа udev с content-type=disk:
+# xe sr-create name-label="Block devices" name-description="Блочные устройства, которые хотим пробросить с гипервизора в виртуалки" type=udev content-type=disk device-config:location=/srv/block-devices
+Добавляем нужное нам устройство:
+# ln -s /dev/sdb /srv/block-devices/sdb (какой нужен хард)
+
+Затем пересканируем SR, дабы автоматически создались нужные VDI:
+# xe sr-scan uuid="uuid_нашего_SR" Можно табом посмотреть, какие вообще есть.
+Должен появится новый VDI с name-label "Unrecognised bus type" на нашем SR.
+Убедиться в этом можно командой:
+# xe vdi-list sr-uuid="uuid_нашего_SR" Помогут команды:
+# xe vdi-list
+# xe vdi-list sr-name-label=имя
+Затем в XenCenter --> нужная нам VM --> Storage --> Attach Disk - выбираем появившийся хард, затем инициализируем его в винде в диспетчере дисков.
+Только в таком случае винда скорее всего снесёт всю разметку, что на нём есть.
+Также:
+Подключение блочного устройства можно осуществить следующим образом:
+# xm block-attach "domU" "real_dev" "virt_dev" "mode"
+Где:
+"domU" - номер виртуального домена или его имя (получить можно, выполнив "xm list");
+"real_dev" - блочное устройство в хост-системе (например, первый раздел flash-drive подключился как /dev/sdc1. В этом случае "real_dev" будет выглядеть так "phy:sdc1");
+"virt_dev" - блочное устройство в гостевой системе (для рассмотренного примера будет выглядеть как "sdc1"). Нужно проследить, чтобы не было конфликтов с уже существующими в гостевой системе устройствами;
+"mode" - режим работы ("r" - только чтение, "w" - чтение и запись).
+Добавить дополнительный жесткий диск в XenServer как отдельное хранилище
+Создаем на новом диске разметку под LVM (ни разделы при этом, ни таблицу разделов создавать не требуется!):
+pvcreate /dev/sdb --config global{metadata_read_only=0}
+Добавляем диск как отдельное хранилище:
+xe sr-create content-type=user host-uuid=[жмем таб] type=lvm device-config-device=/dev/sdb name-label="SAS Local storage"
+После этого запрашиваем листинг имеющихся строаджей:
+#xe sr-list type=lvmuuid ( RO) : c7f66fc2-369e-48d7-8550-e15674bffde3
+#name-label ( RW): SAS Local storage
+#name-description ( RW):
+#host ( RO): xen
+#type ( RO): lvm
+#content-type ( RO): user
+#uuid ( RO) : 093e7a5c-1c38-258b-fb96-fe7cbb486ec0
+#name-label ( RW): Local storage
+#name-description ( RW):
+#host ( RO): xen
+#type ( RO): lvm
+#content-type ( RO): user
+Все, после этого диск сразу появится в разделе "Disks and Storage Repositories", "Current Storage Repositories" с именем "SAS Local storage". Обращаю внимание, что этот локал сторадж не является default.
+
+
+
+Настройка SNMP на Citrix XenServer 6.x
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Редактируем /etc/sysconfig/iptables
+После строки
+“-A RH-Firewall-1-INPUT -p udp –dport 5353 -d 224.0.0.251 -j ACCEPT”
+добавляем:
+-A RH-Firewall-1-INPUT -p udp --dport 161 -j ACCEPT
+-A RH-Firewall-1-INPUT -p udp --dport 123 -j ACCEPT
+Запускаем:
+#service iptables restart
+Редактируем /etc/snmp/snmpd.conf
+Заменяем community на тот, который используется у на SNMP (по умолчанию - public).
+# sec.name source community
+com2sec notConfigUser default public
+Добавляем в автозапуск:
+#chkconfig snmpd on
+Запускаем:
+#service snmpd restart
+Проверяем с другого компа:
+#snmpwalk -v 2c -c public IP-адрес_сервера
+Подключение жёстких дисков из одного Xen-сервера на другой
+Вводная: Есть два однотипных сервера. На обоих установлен XenServer 6.2. Сервера не в пуле. В качестве сторейджов используется локальное хранилище (HDD установленные в сам сервер). После смерти одного из серверов, необходимо поднять работу виртуальных серверов на работающем.
+Решение:
+Корректно гасим рабочий.
+Берём жёсткие диски из умершего сервера и вставляем в рабочий (в данной статье не рассматривается вопрос рейда, если он у вас есть, то обязательно проверьте, что он корректно определился). Включаем сервер.
+После загрузки системы проверяем, что диск подключился
+#fdisk -l
+Далее вводим команду
+#pvdisplay
+Смотрим на поле VG Name — VG_XenStorage-12660091-343d-2107-5dea-bb021055c07c
+(Нам нужна подстрока после «VG_XenStorage-» у вас будет ДРУГОЙ UUID)
+#xe sr-introduce uuid=12660091-343d-2107-5dea-bb021055c07c type=lvm name-label="Local storage REPAIR" content-type=user
+Выйдет uuid подключенного сторейджа — 12660091-343d-2107-5dea-bb021055c07c. Обычно он равен номеру VG Name, но не всегда. Лучше проверить.
+#ll -l /dev/disk/by-id
+Выйдет список дисков. Нам нужен третий (первый сам XEN, второй его резервная копия — третий диск с нужными нам образами)
+#xe host-list
+запоминаем UUID
+#xe pbd-create host-uuid=f53d07d5-335a-434b-93ff-1a66faec9c7a sr-uuid=12660091-343d-2107-5dea-bb021055c07c device-config:device=/dev/disk/by-id/scsi-360050760580b2b901ba7bdcb10981ed2-part3
+Выйдет UUID - 45593530-bbae-c903-12e4-96bda77bc514
+#xe pbd-plug uuid=45593530-bbae-c903-12e4-96bda77bc514
+Проверяем, что сторейдж корректно подключился и у него в списке есть диски виртуальных машин.
+Можно переходить к созданию виртуальных машин и после создания сделать Attach к образам.
+PS: В результате скорость восстановления работоспособности существенно возрастает. По сути теперь она равна скорости
+Выключить
+Переставить диски.
+Загрузиться.
+Прописать сторейдж и виртуалки. На тестах у нас уходило по 7-9 минут до загрузки (но надо учитывать, что это спокойная обстановка тестирования, плюс я был возле сервера).
+PS2: Данная инструкция больше вредна чем полезна, так как делается всё не совсем корректно с точки зрения архитектуры. И надо точно понимать, что вы делаете. Более правильным был бы подход с установкой дисковой полки и настройки high availability-cluster. Тогда бы он делал это всё автоматически. Но пару моментов -
+а) Дисковой полки не было
+б) В случае использовании дисковой полки нужно ставить их парой в зеркале, что удорожает существенно, иначе выход из строя полки убивает нам всю работу (плюс считаем цену на нормальные FC-коммутаторы и сетевые)
+в) есть варианты с использованием DRBD, но при тестах скорость работы и дисковых операций падали ОЧЕНЬ существенно
+PS3: Надо не забывать, что на обоих серверах нужно оставлять некоторое количество памяти и пространства в сторейджах для создания виртуальных машин после переноса. И если память вы сможете переопределить (при выключенных виртуалках), то с пространством на жёстких всё несколько сложнее и дольше.
+PS4: Вообще (если у вас ни какой-нибудь хитрый рейд) можно подключить диски "на горячую" (к примеру через rescan-scsi-bus.sh или что-то подобное). И далее идти с первого пункта. Что сэкономит нам некоторое количество времени на выключение-включение.
+PS5: Есть мнение, что если у вас есть только два сервера, то можно проделать данные операции ДО возникновения проблем на каждом сервере, и затем просто игнорировать варнинги в логе о "неподключающемся" сторейдже. И в случае проблем, надо будет просто "выключить, переставить диски, включить". Но я данный вопрос не тестировал.
+
+
+
+XenServer: скрипт очистки диска Dom0 после установки обновлений
+После установки обновлений можно очистить место на диске Dom0 XenServer.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#!/bin/sh
+PATCHLIST=`xe patch-list params=uuid | awk '{print $5}'`
+for UUID in $PATCHLIST
+do
+        echo "Cleanup patch $UUID"
+        xe patch-pool-clean uuid=$UUID
+done
+#
+Идея скрипта: http://discussions.citrix.com/topic/371712-xenserver-low-root-disk-space-cleaup-script-for-patches/
+Для работы скрипта на единичном сервере без пула можно использовать команду xe patch-clean, но фактически patch-pool-clean отрабатывает корректно.
+Проверяем свободное место на диске df -h и содержимое каталога /var/patch/
+# ls /var/patch/
+applied
+Содержимое каталога /var/patch/applied не трогать и не удалять!
+Также не забываем периодически удалять лог-файлы XenServer.
+Xenserver Root Disk Cleanup
+Заполнение корневого раздела Xenserver может вызвать множество проблем, включая зависания запущенных виртуальных машин. Необходимо периодически следить за заполнением диска и проводить следующие работы:
+Контроль места на диске
+# df -h
+Filesystem Size Used Avail Use% Mounted on
+/dev/sda1 4.0G 2.2G 1.6G 59% /
+Удаление применённых пакетов обновлений и hotfix
+> Для Xenserver 6.2 и выше. Это освобождает место, корректно очищая папку /var/patch/
+
+# xe patch-list params=uuid
+uuid ( RO)    : d3c08fcb-daa0-4410-bdb2-c298109e88ad
+...
+# xe patch-clean uuid=
+Удаление старых лог-файлов
+
+# cd /var/log/
+# rm -rf *.gz
+Очистка каталога /tmp
+
+# cd /tmp/
+# rm -rf *.log
+
+
+
+Импорт VM из командной строки
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Импорт объёмных виртуальных машин через XenCenter происходит с сильно заниженной скоростью. В ходе разбора полётов было обнаружено, что в выводе команды top на хосте мастера пула XenServer фигурировали stunnel и xapi с загрузкой CPU под 100% (по умолчанию все соединения между XenCenter и хостом с XenServer шифруются 256-bit AES SSL).
+
+Импорт виртуальной машины из CLI с отключением шифрования передачи (--nossl) позволяет достичь существенного ускорения процесса.
+
+#xe --nossl -s xen-master -u root -pw password vm-import filename=/mnt/VM.xva sr-uuid=b3bb3595-02f6-e68f-52fb-d8fb77cb1e53 preserve=true
+cc90231d-e0c6-1249-5a2a-08d877af9df4
+где:
+sr-uuid=    UUID нужной SR для сохранения диска VM.
+
+cc90231d-e0c6-1249-5a2a-08d877af9df4 - результат выполнения команды, UUID импортированной виртуальной машины.  
+Проброс контроллера PCI в виртуалку
+Перво-наперво необходимо убедиться в том, что в BIOS включены IOMMU (для AMD) VT-D (для Intel) и прочие "штучки" для виртуализации. Иначе, как говорил Акопян, ничего не получится.
+
+Дальше загружаемся в консоль и смотрим список pci-устройств:
+[root@xen ~]# lspci -D
+Внимательно читаем вывод, находим своё устройство и запоминаем что-то наподобие
+
+0000:18:00.0 Non-Volatile memory controller: Samsung Electronics Co Ltd NVMe SSD Controller 172Xa/172Xb (rev 01)
+Это мой контроллер PCI-E NVMe-диска.
+Теперь нужно позаботиться о том, чтобы его не использовал сам сервер XCP-NG:
+[root@xen ~]# /opt/xensource/libexec/xen-cmdline --set-dom0 "xen-pciback.hide=(0000:18:0.0)"
+
+Перезагружаем сервер. Можно, наверное, как-то иначе применить внесённые изменения, но я не нашёл как именно.
+Теперь убедимся в том, что устройство "готово для проброски":
+[root@xen ~]# xl pci-assignable-list
+0000:18:00.0
+Теперь нужно узнать uuid виртуалки и дать команду:
+[root@xen ~]# xe vm-param-set other-config:pci=0/0000:04:01.0 uuid=(vm uuid) 
+У меня после этого виртуальная виндовс увидела NVMe и сумела показать на нём вполне приличную "скорострельность"
+
+
+
+ZFS на гипервизоре
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+XCP-NG vr. 8.2 умеет размещать виртуальные диски для виртуальных машин еа файловой системе ZFS
+
+Это даёт админу весьма широкий спектр возможностей по управлению этими самыми дисками. К примеру - снапшоты, не требующие большого места на дисках.
+
+Для того, чтобы установить ZFS на сервер гипервизора и создать хранилище, размещённое на отдельном жёстком диске я сделал так:
+
+#yum install zfs
+#modprobe -v zfs
+#zpool create -o ashift=12 -m /volumes/ZFSstorage ZFSstorage /dev/sdb
+#xe sr-create host-uuid= type=zfs content-type=user name-label=ZFSstorage device-config:location=/volumes/ZFSstorage
+Здесь
+
+/dev/sdb - жёсткий диск, предназначенный мною для создания как раз ZFS-хранилища
+ZFSstorage - плод моей буйной фантазии для именования этого хранилища
+/volume/ZFSstorage - место в дереве для хранилища
+
+
+
+Как найти диски виртуальной машины  (не сработало)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Если на вашем гипервизоре хранилось большое количество виртуальных машин и сложно определить нужную, есть несколько команд которые вам помогут. Сделать это можно при условии работоспособности сервера.
+Чтобы посмотреть какие виртуальные диски принадлежат конкретной виртуальной машине, на сервере нужно выполнить команды для поиска – идентификатора (UUID) виртуальной машины, (UUID) диска и (UUID SR) репозитория.
+Для этого подключаемся к серверу по SSH, вводим первую команду:
+xe vm-list
+
+в результате мы нашли UUID виртуальной машины,
+
+Определяем идентификатор виртуальной машины с Windows 10 и Linux.
+Теперь по этому идентификатору можно посмотреть подключенные диски, выполнив такую команду:
+xe vm-disk-list uuid= aae7d446-4072-8966-b828-396b63082644
+
+- в конце указан UUID виртуальной машины.
+
+Получим идентификатор UUID виртуального диска
+В результате мы получим идентификатор UUID виртуального диска, с помощью которого найдем UUID SR репозитория.
+xe sr-list name-label=Local\ storage
+
+Находим UUID SR репозитория
+Теперь по идентификатору репозитория сможем определить какой виртуальной машине принадлежат конкретные диски, а также идентифицировать их в программе.
+
+Нужный нам диск называется -
+8620cbbb-fc1a-2520-e97c-9a66486441fd.VHD
+
+
+(лучше чем первый вариант)
+
+ls -lh /zp0/localstorge
+xe vm-list
+xl list
+
+
+смотрим установленные ВМ, UUID и статус (halted/running)
+xl list
+
+смотрим какие виртуальные диски у нас есть
+ls -lh /zp0/localstorge
+
+смотрим какие VDI и VBD (блочные устройства) относятся к нашим VM
+xe vm-disk-list --multiple
