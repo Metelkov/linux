@@ -1,6 +1,19 @@
 git от 20231027 через https
 
 
+для создания нового (добавлдения с нуля)
+git init
+git add .
+git commit -m "some comment"
+git remote add origin https://github.com/UserName/repository.git    --добавляем репозиторий
+git push --set-upstream origin master                               --послед пуши - просто git push
+спросит логин - ввести логин, без @
+спросит пасс - ввести токен
+
+да, токен не очень удобен, нужно через ssh ключ
+
+
+
 1. задаём имя пользователя под которым мы будем работать (вносить все изменения в файлы)
 git config --global user.name "Alexey Metelkov"
 
