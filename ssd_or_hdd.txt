@@ -1,0 +1,18 @@
+cat /sys/block/sda/queue/rotational
+1
+
+sda -- диск про которого узнаем
+1   -- ответ, если 1, то с вращением, т.е. HDD
+0   -- без вращения, значит SSD
+
+
+так же есть полезная инф
+
+cat /sys/block/sda/queue/hw_sector_size
+512
+
+cat /sys/block/sda/device/model
+TOSHIBA HDWD110
+
+cat /sys/block/sda/size
+1953525168

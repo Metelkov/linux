@@ -1,0 +1,66 @@
+.подключаем свой репозиторий, который находится в своей папке (локально)
+(тестировано на REDOS  (CENTOS))
+
+
+создадим директорию, там будем хранить образ (iso), точнее файлы можно туда скопировать
+mkdir  /srv/repo/
+
+и еще дляcdrom - его туда подмонтируем, чтобы забрать к себе файлы
+mkdir /mnt/cdrom/
+
+смотрим
+lsblk
+
+видим 
+sr0      --это и есть наш cdrom, точнее это у нас подмонтированный образ iso в гирервизоре
+           в ВМ мы увидим уже файлы
+         (тут ситуация, когда мы в гипервизоре прикрепили iso образ и видим это в своей ВМ)
+
+монтируем его
+mount -o -ro /dev/sr0 /mnt/cdrom
+
+
+и копируем эти все файлы к себе простым копированием
+
+
+СОЗДАЕМ КОНФИГ ДЛЯ РЕПОЗИТОРИЯ
+
+/etc/yum.repos.d/postgrees11.12.repo
+
+postgrees11.12.repo  --наш файл-конфиг нашего репозитория (локального)
+
+в этот файл пишем следующее:
+[Postgrees-pro11]
+name=PostgreesPro11.21.2.+14.9.2+15.4.2
+baseurl=file"///srv/repo/postgrespro11/cdrom/redos/7.3/os/x86_64/rpms
+enabled=1
+gpgcheck=1
+gpgkey=file//srv/repo/postgrespro11/cdrom/keys/GPG-KEY-POSTGRESPRO
+
+
+
+name=PostgreesPro11.21.2.+14.9.2+15.4.2                                  --название репозитория
+
+baseurl=file"///srv/repo/postgrespro11/cdrom/redos/7.3/os/x86_64/rpms    --путь до него три слеша! cdrom взялся
+                                                                         от пути монтирования и копирования, далее
+                                                                         путь до папки rpms, на этом путь заканчивается
+                                                                         хотя там еще есть папки
+
+enabled=1                                                                -- 1 репозиторий включен -0 отключен и его не увидеть
+
+gpgcheck=1                                                               
+
+gpgkey=file//srv/repo/postgrespro11/cdrom/keys/GPG-KEY-POSTGRESPRO       --путь до папки с ключом
+
+обновляем
+yum apt update
+
+
+смотрим
+yum repolist
+
+
+а вот установку - название пакета - берем из офиц документации, в нашем случае
+yum install postgrespro-std-11
+
+
