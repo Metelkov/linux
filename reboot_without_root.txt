@@ -1,0 +1,16 @@
+даем права на перезапуск без рута (тут не только перезапуск)
+sudo reboot
+
+
+в консоли набираем 
+visudo
+
+
+в конец файла дописываем
+korobka  тут имя пользователя
+
+@includedir /etc/sudoers.d
+
+korobka ALL=(ALL) NOPASSWD: ALL
+
+korobka ALL=NOPASSWD: /usr/bin/systemctl, /usr/bin/systemctl, /usr/bin/systemctl

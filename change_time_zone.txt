@@ -1,0 +1,7 @@
+меняем временную зону (ubuntu)
+
+смотрим что есть
+timedatectl list-timezones | grep oscow
+
+сама замена
+timedatectl set-timezone Europe/Moscow
