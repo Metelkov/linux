@@ -1,0 +1,562 @@
+Ansible
+-приведение к состоянию, принцип идемпотентности - если это уже сделано, то повторно не делается, 
+не рекомендуется использовать и модуль который обращается к шелл напрямую, ну или с осторожностью
+
+(несколько начальных моментов будет и для linux и для windows, а после
+только для linux)
+
+
+все программки делятся на 2 типат pull и push
+
+pull - на управляемых серверах поставить агент, это самое начало
+       придется делать руками - делать логин на каждый сервер и 
+       установить туда agent
+
+push - Ansible относится к ним - на управляемых серверах ничего не нужно
+       устанавливать - "Ansible мастер" делает на сервера push (запихивает
+       на сервер настройки сам)
+
+
+
+Ansible мастер - компьютер на котором установлен Ansible (только один компьютер)
+еще могут называть Control server
+мин требования:  
+1. Red had/Debian/Ubuntu/Centos/OS X (только linux, на windows не работает)
+2. Python2.6+ или Python3.5+
+
+
+Controlled servers (managed servers) - управляемые компьютеры (клиенты)
+
+1. для linux нужны всего админский логин и пароль или ssh key и Python2.6+
+работа через протокол ssh (т.е. открыт порт 22)
+
+2. для windows - тоже даминский логин/пароль, powershell 3.0, но для многих
+команд версия powershell должна быть выше 3.0 и еще запустить скрипт на 
+power shell - ConfigureRemotingForAnsible.ps1
+работа через WinRM  д.б. открыт порт 5986
+
+
+Установка:
+зайти на сайти там посмотреть, воможно будут какие то изменения
+https://docs.ansible.com/
+https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html#latest-release-via-yml
+
+не забываем, что нам нужен еще и python, он может быть уже установлен, нужно проверить
+
+для Centos 7
+Добовляем репозиторий
+yum install epel-release
+
+yum update
+
+установка
+yum install ansible
+
+проверяенм версию
+ansible --version
+
+
+для Ubuntu
+Добовляем репозиторий
+apt-add-repository ppa:ansible/ansible
+
+apt update
+
+установка
+apt install ansible
+
+проверяенм версию
+ansible --version
+
+
+
+сейчас некоторое неудобство - будем использовать Amazon linux
+но думаю это не создаст проблем
+
+устанавливаем Мастера
+pip install ansible    (да, через питона)
+
+
+проверяенм версию
+ansible --version
+
+минус установки через питон - не создается конфиг файл
+а если устанавливаем обычным способом, например (apt install ansible
+в ubuntu) - то конфиг есть
+
+
+
+Подключение Ансиблом:
+Подключаться лучше через  ssh ключ
+
+копируем ключи к себе на Мастер Ansible
+файлы   ******-key.pem
+
+дальше, для безопасности можно изменить на ключи права
+chmod 400   ******-key.pem
+
+
+создаем и заходим в директорию
+mkdir ansible/
+cd ansible
+
+создадим директорию inventory и в ней файл hosts
+так же может сожержать и логины с паролями, но это опасно
+поэтому для паролей используем vault
+hosts    -- это некий аналог днс
+
+в него запишим адреса наших хостов и в прямых скобках группы
+
+[stading_servers]   --так обозначается группа
+linuxX   ansible_host=172.31.8.69   ansible_user=ec2-user   ansible_pass=Qwerty123
+linuxXX   ansible_host=172.31.8.68   ansible_user=ec2-user   ansible_ssl_private_key_file=/home/ec2-user/.ssh/ourkey1.pem
+
+при первом подключении к серверу - сервер может запросить fingerprint - нужно напечатать yes и жать ентер
+в некотором случае при выполнении плэйбука может случиться ошибка, тут просто берем и подключаемся к
+хосту руками через ssh (мы же не по паролю подключаемся), проходим fingerprint и разлогиниваемся,
+потом повторно перезапускаем наш плэйбук
+
+запускаем на выполнение
+ansible -i hosts all -m ping
+
+ansible   --запуск на выполнение
+-i hosts  --какой файл инвентори мы используем  
+all       --на каких серверах запускаем, в этом случае на всех, но можно на одном
+          или на отдельной группе
+-m ping   --модуль пинг (в ручном запуске почти всегда будет -m и имя модуля)
+
+
+
+создадим в нашем hosts еще одну группу серверов
+[prod_servers]
+linux1   ansible_host=172.31.27.16   ansible_user=ec2-user   ansible_ssl_private_key_file=/home/ec2-user/.ssh/ourkey1.pem
+linux2   ansible_host=172.31.19.188   ansible_user=ec2-user   ansible_ssl_private_key_file=/home/ec2-user/.ssh/ourkey1.pem
+
+чтобы обойти fingerprint  - создадим конфиг
+проверяем есть ли этот файл
+
+ansible --version
+
+и если вторая строчка будет
+config file = none
+
+то никакого конфига у нас нет, мы его создадим и будем держать его в нашем проекте
+nano ansible.cfg
+
+впишем следующее
+
+[defaults]                    --это самая первая строчка, д.б. всегда
+host_key_checking = false     --отменяем проверку на fingerprint   (все значения на офиц сайте)
+inventory         = ./hosts   --чтобы больше не писать ansible -i host, чтобы он сам знал, где брать файл
+
+сейчас у нас в корне ansible лежат два файла - hosts - наш "днс" и файл с конфигом
+
+так же можно вставить строку большими буквами,только false строчными, перед ansible-playbook
+ANSIBLE_HOST_KEY_CHECKING=false
+
+вот что получается:
+ANSIBLE_HOST_KEY_CHECKING=false ansible-playbook -i ./inventory/hosts ......
+
+и запускаем пинг на всех серверах, сейчас нужно только указать на каких серверах и какой модуль
+
+ansible all -m ping
+
+all       --на всех серверах
+-m ping   --модуль пинг
+
+
+еще пример файла hosts и запуска, но этот пример еще рано давать для запуска, но пусть он тут будет
+---
+all:
+  spb:
+    hosts:
+       spb-host1.com:
+       spb-host2.com:
+    vars:
+       master:spb-host-master.com:
+   msk:
+    hosts:
+       msk-server[1-5].com
+
+и сам запуск плэйбука
+--check    --тестирует выполнение и НИЧЕГО!! не изменяет, рекомендуется выполнять первый запуск с этим параметром
+ansible-playbook -i ./inventory/hosts --limit "msk-server1.com" --check --private-key ~/.ssh/my_private_key.pem --ask-vault-pass ./init.yml --tag роль
+
+ansible-playbook                           --запуск плэйбука
+-i ./inventory/hosts                       --указываем гда лежит hosts
+--limit "msk-server1.com"                  --для какого хоста применять роль
+--check                                    --параметр для проверки - если он есть, ничего меняться и 
+                                           применяться не будет
+--private-key ~/.ssh/my_private_key.pem    --путь до нашего ключа
+--ask-vault-pass                           --спрашивать пароль у хранилища (он там зашифрован)
+./init.yml                                 --сам плэйбук, которую запускаем
+--tag "роль"                               -- выполнить отлько эту роль из всего плэйбука - "роль" - название 
+                                           роли, если не указывать плэйбук применится весь 
+
+
+
+
+установка Мастера Amazon linux или через pip на любых linux (где есть pip)
+
+pip install ansible
+
+но при установке через pip не создается конфиг файл, но всегда можно создать конфиг руками
+
+
+
+подключение к серверам linux
+
+подчключаться будем используя ключи
+
+для начала копируем ключи (*.pem) на Мастер в нашу домашн. директорию
+и для безопасности можно изменить у них права
+chmod 400 наш-ключ.pem
+
+опять повторим, нам нужно создать директорию, пусть ansible перейдем в нее и создадим
+hosts  файл - файл inventory который содержит хосты и группы (напоминает днс) сл содержания:
+
+[stading_servers]       --так обозначается группа
+linuxX  ansible_host=172.31.8.69 ansible_user=ec2-user   --наш пользователь для подключения
+   (продолдаем эту же строчку) ansible_ssh_private_key_file=/home/ec2-user/.ssh/california+key1.pem
+                                ansible+pass=mypass     --если используем пароль, а не ключ ssh
+                                 
+
+пробуем запустить файл
+
+ansible -i hosts all -m ping   --запустить на всех серверах пинг
+
+дополним наш инвентори
+
+[prod_servers]
+linux1  ansib_lehost=172.31.27.16 ansible_user=ec2-user ansible_ssh_private_key_file=/home/ec2-user/.ssh/california+key2.pem
+
+linux1  ansib_lehost=172.31.38.188 ansible_user=ec2-user ansible_ssh_private_key_file=/home/ec2-user/.ssh/california+key2.pem
+
+
+чтобы убрать fingerprint:
+1. сделать конфиг  -  ansible.cfg
+
+
+смотреть,есть ли конфиг
+ansible --version   --если есть конфиг - он покажется (вторая стр)
+содержимое конфига
+
+[defaults]
+host_key_checking = flse                  --отмена проверки
+iunventory        = ./hosts               --
+--файл чтобы кажд раз не писать ansible
+
+inventory =./hosts                        --чтобы не прописвать "ansible -i hosts"
+
+2. написать впереди заглавными!:
+ANSIBLE_HOST_KEY_CHECKING=falce   --а false строчными
+
+
+
+      как подключаться к windows
+ВАЖНО - сейчас аунтификацию мы делаем локальными пользователями (basic auntification)
+для AD нужно использовать или Kerberos, или TNLM, или CredSSP
+
+на ansible master нужна библиотека winrm
+изменить hosts файл
+на win серверах нужно сделат ь enable winrm
+
+устанавливаем winrm
+
+sudo pip install "pywinrm>=0.2.2"     --версия больше или равно 0.2.2
+
+на нашем мастере модифицируем hosts
+делаем новую группу 
+
+[windosw_servers]
+                   и добавляем сервера
+windows2012  ansible_host=172.31.4.99
+windows2016  ansible_host=172.31.13.170
+                   если у нас одинаковые параметры для целой группы (имя и пароль
+                   например), то можно их прописать в другом есте, не как в прошл 
+                   раз. для этого пишем название группы
+                   (в данном! файле все писать через = (равно), а не двоеточие)
+[windosw_servers:vars]
+ansible_user=myadmin
+ansible_password = advit1234%          --в чистом виде никогда пароли не пишем
+ansible_port = 5986                    --нужно для windows
+ansible_connection = winrm             --нужно для windows
+ansible_winrm_server_cert_validation = ignore     --нужно для windows
+
+ВАЖНО - сейчас аунтификацию мы делаем локальными пользователями (basic auntification)
+для AD нужно использовать или Kerberos, или TNLM, или CredSSP
+
+идем в браузер, набираем ansible for windosw, заходим на офиц сайт
+docs.ansible.com/ansible/latest/intro_windows.html
+и читаем,
+там же находим некоторый скрипт на PS который нужно запустить
+example/scripts/ConfigureRemotingForAnsible.ps1
+
+его нужно скачать и запустить на ВСЕХ windows машинах как Администратор
+(т.е. запустить PS как администратор и в ней уже запустить скрипт)
+
+должен выдать "Ок"
+
+(если машин много и есть DC - добавить в group policy)
+
+теперь пробуем пингануть
+
+ansible windosw_servers -m win_ping
+
+windosw_servers      --наша группа
+-m win_ping          --название модуля - внимание на приписку win
+                       почти все виндовые модули начинаются с win_
+
+если мы НЕ ХОТИМ СВЕТИТЬ ПАРОЛЕМ, то убираем переменную отвечающ за пароль
+из нашего hosts файла
+и наша строка будет такой
+
+ansible windosw_servers -m win_ping --ask-pass
+
+
+
+   вернемся к linux
+создание файла inventory  (сейчас его роль исполняет наш hosts)
+
+сервера можно описывать не символьным именем, а ip, или доменные имена
+webserver.google.com
+
+или нам ранее привычнее через алиас
+webserver ansible_host=10.20.130.140
+
+у нас есть группа которой принадлежат все сервера -all
+а есть ungrouped - все сервера которые не входят ни в одну группу
+(отдельно прописанные)
+
+ВАЖНО - АНСИБЛ ЧУВСТВИТЕЛЕН К РЕГИСТРУ
+
+
+добавим в наш файлу hosts нескалько групп
+(так же рекомендовано разделять сервера на группы)
+
+10.50.1.1
+10.51.1.2
+
+[staging_DB]
+192.168.1.1
+192.168.2.2
+
+[staging_WEB]
+192.168.2.1
+192.168.2.2
+
+[staging_APP]
+192.168.3.1
+192.168.3.2
+
+//а теперь создадим группу которая включит все вервера от групп
+staging (т.е. включит в себя другие группы)
+
+
+[staging_ALL:children]
+staging_DB
+staging_WEB
+staging_APP
+
+ и еще 
+[prod_DB]
+10.10.1.1
+
+[prod_WEB]
+10.10.2.2
+
+[prod_APP]
+10.10.3.3
+
+[prod_ALL:children]
+prod_DB
+prod_WEB
+prod_APP
+
+[DB_ALL:children]
+staging_DB
+prod_DB
+
+[APP_ALL:children]
+ataging_APP
+prod_APP
+
+[RAZNOE:children]
+APP_ALL
+DB_ALL
+
+а теперь создадим группу, которая объеденит параметры (не сервера)
+(общие переменные группы),так делать рекомендовано, чтобы в группах
+где сервера - были одни сервера, всё без лишних записей
+
+[prod_servers:vars]
+ansible_user=ec2-user
+ansible_ssh_private_key_file=/home/ec2-user/.ssh/california-key2.pem
+
+[RAZNOE:vars]
+message=Hello
+
+а вообше - хороший тон, чтобы в inventory были только сервера и/или 
+только ip адреса, никаких переменных
+
+
+чтобы посмотреть какие сервера прописаны и какие группы и переменные
+есть нужно:  (но будет слишком развернуто)
+
+ansible-inventory --list
+
+и еще (покажет дерево)
+
+ansible-inventory --graph
+
+
+
+     Запуск Ad-Hoc Команд   (обычные команды ансибл, если они не в 
+                             плэйбуке или файле)
+
+
+перепишем наш hosts (уберем лишнее)
+
+[stading_servers]
+linuxX  ansible_host=172.31.8.69 ansible_user=ec2-user
+   (продолдаем эту же строчку) ansible_ssh_private_key_file=/home/ec2-user/.ssh/california+key1.pem
+                               
+
+[prod_servers]
+linux1  ansib_lehost=172.31.27.16
+linux1  ansib_lehost=172.31.38.188
+
+[prod_servers:vars]
+ansible_user=ec2-user
+ansible_ssh_private_key_file=/home/ec2-user/.ssh/california+key1.pem
+
+
+
+Ad-Hoc Команды это:
+
+ansible all -m ping
+
+ansible all -m setup   --сканирует сервер и выдает о нем данные (адрес, какая ОС, время...)
+
+ansible all -m shell -a "uptime"  --запустить шелл команды, -a -аргумент, т.е. команда 
+                                    которая запуститься
+
+ansible all -m command -a "uptime"  --запустить шелл команды, но не через шелл, поэтому
+                                      переменные окружающей среды не будут видны ($home)
+                                      и тут не будут работать перенаправления ">", 
+                                      "<",  "|"
+
+
+скопируем файл с мастреа ансибла на все сервера
+
+создадим файл который будем копировать
+echo "privet" > privet.txt
+
+ansible all -m copy -a "src=privet.txt dest=/home mode=777"
+
+src=privet.txt   --путь к копируемому файлу, т.к. файл в текущ директории,
+                   то ничего не пишем, но можем и написать полный путь
+
+dest=/home       --куда положим файл на удаленных хостах, тут лучше
+                   указывать полный путь
+
+mode=777         --сменим права при копировании (можно не указывать, тогда
+                   права будут по умолчанию)
+
+
+и можем получить ошибку  Destination /home not writable
+потомучто команда запущена без sudo
+
+переписываем и добавляем в конец -b (become) - чтобы получить права
+
+ansible all -m copy -a "src=privet.txt dest=/home mode=777" -b
+
+если мы еще раз запустим эту команду - то ничего не будет, т.к
+файл уже существует (это точно такой же файл)
+
+
+посмотрим, есть ли наш файл на удаленных серверах
+
+ansible all -m shell -a "ls -la /home"
+
+теперь файл удалим
+
+ansible all -m file -a "path=/home/privrt.txt state=absent" -b
+
+-m file    --может создавать файл, директории
+лучше писать полный путь
+ -b        --т.к. это удаление - даем sudo
+
+
+
+скачиваем с сайта в интернете на все сервера
+
+ansible all -m get_url -a "url=https://collection.com/rest/download/64 dest=/home" -b
+
+url=https://collection.com/rest/download/64   --откуда брать файл (слеш не закрыт)
+                                                обязательно указывать протокол (https)
+dest=/home                                    --куда положить
+-b                                            --судо
+
+
+установка программ
+
+ansible all -m yum -a "name=stress state=latest" -b
+или
+ansible all -m yum -a "name=stress state=installed" -b
+
+-m yum             --потомучто у нас сейчас yum
+name=stress        --название программы
+state=latest       --последняя версия
+state=installed    --тоже самое что и последняя версяи
+-b                 --судо
+
+удалить (деинсталлировать)
+
+ansible all -m yum -a "name=stress state=removed" -b
+
+
+
+читать с сайта информацию (проверка, можно ли подконнектиться 
+к этому адресу с указанных серверов)
+
+ansible all -m uri -a "url=http://www.adt-it.net"
+
+получим статус "status": 200  ну или какой другой (200 - все ок)
+
+
+
+если мы хотим посмотреть контент (получим код странички)
+
+ansible all -m uri -a "url=http://www.adt-it.net return_content=yes"
+
+
+
+установим веб сервер и запустим его (и чтобы был активен при перезагрузке)
+
+ansible all -m yum -a "name=httpd state=latest" -b   --тут просто установка
+
+ansible all -m service -a "name=httpd state=started enabled=yes -b   
+--запуск и добавление в автозагрузку
+
+
+дебаггинг
+
+ansible all -m shell -a "ls /" -v
+-v      --дебаггинг (verbose)
+-vvvv   --еще больше информации
+
+
+смотрим все модули которые есть в ансибл
+
+ansible-doc -l
+
+ansible-doc -l | grep win_     --можно фильтровать
+
+
+
+
+
+
+
+
