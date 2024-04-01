@@ -554,7 +554,491 @@ ansible-doc -l
 ansible-doc -l | grep win_     --можно фильтровать
 
 
+Правила Формата YAML
 
+все файлы yml начинаются с 
+---
+
+а вот заканчивать 
+...
+уже не обязательно
+
+фармат - ключ - значение и списки
+
+списки начинаются с пробел и минус
+ -
+
+важно - сколько пробелов (как правило они кратны 2), т.е.
+пример списка
+
+ fruits:
+  - apple
+  - orange
+  - mango
+
+если нужен еще список (список в списке), то уже ставим минус
+
+ - fruits:
+    - apple
+    - orange
+    - mango
+
+ - vegetables:
+    - carrots
+    - cucumber
+
+вот тут будет вложенный список (аттрибут с аттрибутами)
+
+ - vasya:
+    nick: vasek
+    position: developer
+    skills:
+      - python
+      - perl
+      - php
+
+ - petya:
+     nick: pet
+     position: manager
+     skills:
+       - manage
+       - make_noise
+
+ - petya:
+     nick: "pettya: krutoy"
+
+можно все писать в одну строчку
+ - kolya: { nick: kolyan, position: administrator, skills: ['killer', 'cleaner'] }
+
+внимание на скобки!
+ fruits: ['apple', 'orange', 'mango']
+
+ansible-inventory --list
+
+ Перенос переменных в group_vars
+чтобы не засорять инвентори - переменные выносим в отдельный файл
+для начала создадим директорию
+
+
+показать все серверы и какие переменные к ним относятся
+mkdir group_vars
+
+
+а в ней создаем файлы, которые называются как наши группы и внутрь
+вставить строчки (переменные)
+
+содержание инвентори
+
+[STAGING_SERVERS_WEB:vars]
+ansible_user=ec2-user
+ansible_ssh_private_key_file=/home/ec2-user/.ssh/california-key1.pem
+
+[PROD_SERVERS_WEB:vars]
+ansible_user=ec2-user
+ansible_ssh_private_key_file=/home/ec2-user/.ssh/california-key2.pem
+
+[ALL_SERVERS_DB:vars]
+db_endpoint=xxxxxx.yyyyyyyy.ocm:4151
+owner=vasya
+location="Hutson, TX"
+
+
+
+переносим впеременные в файл - для этого создадим файл в group_vars
+с именем сервера у которого будем выносить переменные
+НО НЕМНОГО ИЗМЕНИМ СОДЕРЖАНИЕ
+(двоеточие можно ставить где угодно, можно выравнить текст)
+(вместо знака равно)
+
+nano group_vars/STAGING_SERVERS_WEB
+---
+ansible_user                 : ec2-user
+ansible_ssh_private_key_file : /home/ec2-user/.ssh/california-key1.pem
+
+и ниже можно дописать все переменные которые относятся к нашей группе
+
+а из хост-файла все стираем, включая название группы (в квадратных скобках)
+вот это стираем
+[STAGING_SERVERS_WEB:vars]
+ansible_user=ec2-user
+ansible_ssh_private_key_file=/home/ec2-user/.ssh/california-key1.pem
+
+
+
+nano group_vars/ALL_SERVERS_DB
+---
+db_endpoint            : xxxxxx.yyyyyyyy.ocm:4151
+owner                  : vasya
+location               : "Hutson, TX"
+
+не забываем удалить из инвентори\хостс
+
+
+
+Первые Playbook
+
+запускать:
+
+ansible-playbook playbook1.yml
+
+первый плэбук
+
+---                                        --всегда в начале три минуса
+- name: Trst Connection to my server       --имя, что делает плэйбук
+  host: all                                --важен отступ - запуск на всех хостах
+  become: yes  (true)                      --админские права, в нек случаеях писать true
+
+  tesks:                                   --начинаем писать задачу
+                                           --внимание на отступы!!!!
+  - name: Ping my servers                  --имя команды
+    ping:                                  --у пинга нет параметров
+
+
+
+второй плэйбук
+
+---
+- name: Install default Apache Web Servers
+  hosts: all
+  become: all   (true)
+
+  tasks:
+  - name: Install Apache WebServer
+    yum: name=httpd state=lstest         --мож быть apt - указать что устанавливаем
+                                           и какую версию
+    
+  - name: Start Apache and Enable boot   --просто имя - запуск и прописать в автозагрузку
+    service: name=httpd state=started enable=yes   (true)   --стартуем программу
+                                                              и делаем ее автозагрузку
+
+
+третий плэйбук
+
+---
+- name: Install Apache and upload my Web Page
+  hosts: all
+  become: all   (true)
+
+  vars:
+    source_file: ./MyWebSite/index.html    --файл который будем копировать
+    destin_file: /var/www/html             --куда будем копировать файл
+
+  tasks:
+  - name: Install Apache Web Server
+    yum: name=httpd state=latest
+
+  - name: Copy MyHomePage to Servers
+    copy: src={{ source_file }} dest={{ destin_file }} mode=0555  
+                                           --переменные бурем из vars (чуть выше)
+                                             права могуть быть 555 (без нуля)
+    notyfy: Restart Apache                 --вызов хэндлера, его имя должно совпадать
+                                           см ниже
+
+  - name: Start WebServers and make it ensble on boot
+    service: name=httpd state=started enable=yes (true)
+
+но если мы обновим index.html то мы не получим ее без перезапуска сервера
+всегда рестартовать нельзя
+нужно сделать рестарт отлько после изменения index.html
+для этого добавим хэндлерс (хендлерс)
+
+  handlers:
+  - name: Restart Apache
+    service: name=httpd state=restarted
+
+
+
+
+Переменные - Debug, Set_fact, Register
+
+---
+- name: My Super Playbook Variables Lesson
+  hosts: all
+  become: yes (true)
+
+  vars:
+    message1: Privet
+    message2: World
+    secret: wefwfewefwfw
+
+  tasks:
+
+  - name: Print Secret Variable
+    debug:                  --необходимо для вывода на экран
+      var: secret           --выводим сожержимое переменной secret
+
+  - debug:
+      msg: "Sekretnoe slovo: {{ secret }}"   --так же печатает вывод переменной
+
+  - debug:
+      msg: "Vladelec servera --> {{ owner }} <--"   --так же печатает вывод переменной
+                                                    тут переменная лежит в hosts файле
+
+  - set_fact: full_message="{{ message1 }} {{ message2 }} from {{ owner }}" 
+                                                         --пишем название новой 
+                                                           переменной соеденяем  
+                                                           переменные, между ними пробел
+                                                           чтобы был пробел. но вывода не будет
+                                                           для вывода нужен debug
+
+  - debug:
+      var: full_message                                    --а тут уже выводит на экран
+
+
+но у нас есть много переменных который энсибл собирает, но нам не показывает
+ansible all -m setup     --так их можно посмотреть
+
+отобразим сейчас значение одной из
+
+  - debug:
+      var: ansible_distribution                             --при использовании var
+                                                            фигурные скобки не нужны
+                                                            они нужны при использовании переменной
+
+сохранение output команд
+
+  -shell: uptime                         --тут команда выведется (выполнится) на сервер
+                                         и ее вывод мы не увидим, чтобы увидеть, нужно
+                                         вывод сохранить
+   register: results                     --вот тут вывод сохранен в переменную results
+
+  - debug:
+      var: results                       --а тут уже выводим на экран
+
+
+а чтобы печатать не все, а только строку продлеваем запись через точку
+
+  - debug:
+      var: results.stdout                 --выведет только строку относящ к stdout, но в нашем
+                                          случае results содержала много строк, а мы тут взяли 
+                                          только одну
+
+
+
+ Блоки и Условия – Block-When
+
+сейчас у нас 3 сервера, два - redhat и один Ubunru (debian)
+
+используем плэйбук (немного его изменим)
+
+---
+- name: Install Apache and upload my Web Page
+  hosts: all
+  become: all   (true)
+
+  vars:
+    source_file: ./MyWebSite/index.html    --файл который будем копировать
+    destin_file: /var/www/html             --куда будем копировать файл
+
+  tasks:
+  - name: Check and print LINUX version    --тут просто смотрим какие у нас linux
+    debug: var=ansible_os_family
+
+  tasks:
+  - name: Install Apache Web Server for RedHat
+    yum: name=httpd state=latest
+    when: ansible_os_family == "RedHat"          --чтобы запустить этот таск только на
+                                                 redhat (условие)
+
+  tasks:
+  - name: Install Apache Web Server for Debian   --тут устанавливаем для убунту (дебиан)
+    apt: name=apache2 state=latest               но так нельзя - мы будем пытаться установить
+                                                 везде этот пакет, а на 2 redhat - не получится
+                                                 поэтому тоже пишем when
+    when: ansible_os_family == "Debian"          --чтобы запустить этот таск только на Ubentu/Debian
+
+    when: ansible_os_family != "RedHat"          --тоже самое, что и строка выше, но условие
+                                                 "не равняется" - тут выполнится наsuse но
+                                                 выдаст ошибку (ничего не сделает)
+ 
+
+  - name: Copy MyHomePage to Servers
+    copy: src={{ source_file }} dest={{ destin_file }} mode=0555  
+                                           --переменные бурем из vars (чуть выше)
+                                             права могуть быть 555 (без нуля)
+#    notyfy: Restart Apache                 --вызов хэндлера, его имя должно совпадать
+                                            см ниже, но тут пока закомментируем - все и
+                                            без этой стр будет работать
+
+  - name: Start WebServers for RedHat and make it ensble on boot
+    service: name=httpd state=started enable=yes (true)
+    when: ansible_os_family == "RedHat"
+
+  - name: Start WebServers for Debian and make it ensble on boot
+    service: name=apache2 state=started enable=yes (true)
+    when: ansible_os_family == "Debian"
+
+  handlers:
+  - name: Restart Apache RedHat
+    service: name=httpd state=restarted
+
+  - name: Restart Apache Debian
+    service: name=apache2 state=restarted
+
+
+изменим наш плэйбук - перепишем все на блоки
+
+
+---
+- name: Install Apache and upload my Web Page
+  hosts: all
+  become: all   (true)
+
+  vars:
+    source_file: ./MyWebSite/index.html    --файл который будем копировать
+    destin_file: /var/www/html             --куда будем копировать файл
+
+  tasks:
+  - name: Check and print LINUX version    --тут просто смотрим какие у нас linux
+    debug: var=ansible_os_family
+ 
+  - block:  #=== block for RedHat====
+
+
+      - name: Install Apache Web Server for RedHat
+        yum: name=httpd state=latest
+   
+      - name: Copy MyHomePage to Servers
+        copy: src={{ source_file }} dest={{ destin_file }} mode=0555
+        notyfi: Restart httpd
+
+      - name: Start WebServers for RedHat and make it ensble on boot
+        service: name=httpd state=started enable=yes (true)
+    
+    when: ansible_os_family == "RedHat"    --when должен быть под блоком!!
+
+
+  - block:  #=== block for Ubuntu====
+
+      - name: Install Apache Web Server for Debian   --тут устанавливаем для убунту (дебиан)
+        apt: name=apache2 state=latest  
+
+      - name: Copy MyHomePage to Servers
+        copy: src={{ source_file }} dest={{ destin_file }} mode=0555
+        notyfi: Restart Apache2
+
+      - name: Start WebServers for Debian and make it ensble on boot
+        service: name=apache2 state=started enable=yes (true)
+    
+    when: ansible_os_family == "Debian"
+
+  handlers:
+  - name: Restart Apache RedHat
+    service: name=httpd state=restarted
+
+  - name: Restart Apache Debian
+    service: name=apache2 state=restarted
+
+
+
+
+ Циклы – Loop, With_Items, Until, With_fileglob
+
+---
+- name: Loops Playbook
+  hosts: linux3
+  become3:   (true)
+
+  tasks:
+  - name: Say Hello to All           --привет всем владельцам
+    debug: msg="Hello {{ item }}"    --item зарезервированное слово
+    loop:                            --loop только в ансибл с 2,5, если 2,4
+                                     там with_items
+      - "Vasya"                      --перечисление для loop
+      - "Petya"
+      - "Masha"
+      - "Olya"
+
+другой вид loop - Until
+
+  - name: Loop Until example
+    shell: echo -n Z >> MyFile.txt && cat MyFile.txt  --сохраняем Z в файл и читаем его
+    register: output                   --сохраняем результат в переменную
+    delay: 2                           --задержка между запусками 2 сек
+    retries: 10                        --повторить 10 раз, если не указать сколько - 
+                                       по умолчанию всего 3 повтора
+    until: output.stdout.find("ZZZZ") == false      --запускать команду shell, сохранять
+                                                    что выведется на экран, 2 сек задержка,
+                                                    все это повторять 10 раз. тут он проверяте
+                                                    есть ли в нашем output ZZZZ (пока не наступило
+                                                    ZZZZ) и повторяет это 10 раз
+  - name: Prinu Final output
+    debug:
+      var: output.stdout             --напечатает то, что было в файле (наш stdout)
+
+  - name: Install many packages
+    yum: name={{ item }} state=installed
+    loop:
+      - python
+      - tree
+      - mysql-client
+
+
+устанавливаем сервер, запуск и добавление в автозвгрузку, после
+копируем папку, если копирование изменит метафайлы - будет 
+сделат рестарт
+
+
+---
+- name: Install Apache and Upload my Home Page
+  hosts: all
+  become: yes (true)
+ 
+  vars:
+    source_folder: ./MyWebSite2
+    destin_folder: ./var/www/html
+
+  tasks:
+    -block:   #=== For RedHat ===
+       - name: Install Apache Web Server for RedHat
+         yum: name=httpd state=latest
+
+        - name: Start Web Server for Redhat
+          service: name=httpd state=started enable=yes  (true)
+
+       when: ansible_os_family == "RedHat"
+
+    - block:  #=== For Ubuntu ===
+ 
+      - name: Install Apache for Debian
+        apt: name=apache2 state=latest
+
+      - name: Start Web Server for Debian
+        service: name=apache2 state=started enable=yes  (true)
+
+      when: ansible_os_family == "Debian"
+
+
+
+  - name: Copy HomePage file to Web Server
+    copy: src={{ source_folder }}/{{ item }} dest={{ destin_folder }} mode=0555   --добавили item
+    loop:                                     --список файлов которые внутри нашей папки
+      - "index.html"                          --если файл скопируется - будет notify
+      - "bahamas.png"
+      - "bulgaria.png"
+      - "jordan.png"
+      - "newzeland.png"
+
+другой способ копирования, без перечисления файлов
+(делаем паттерн)
+    copy: src={{ item }} dest={{ destin_folder }} mode=0555   --изменяем эту стр
+    with_fileglob: "{{ source_folder }}/*.*"                  --указать полный путь (скопировать все)
+
+    notify:                                   --вызываем всегда, для наглядности
+      - Restart Apache RedHat
+      - Restart Apache Debian
+
+
+
+
+  handlers:
+  - name: Restart Apache RedHat
+    servce: name=httpd state=restarted
+    when: ansible_os_family == "RedHat"     --добавляем условие!!
+
+  - name: Restart Apache Debian
+    servce: name=spsche2 state=restarted
+    when: ansible_os_family == "Debian"     --добавляем условие!!
 
 
 
