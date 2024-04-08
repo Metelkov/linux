@@ -1042,5 +1042,412 @@ ansible all -m setup     --так их можно посмотреть
 
 
 
+ Шаблоны - Jinja Template
+расширение файла j2
+
+например мы будем копировать файл, но чтоб файл был немного изменен
+(генерация (копирование с изменением), другие переменные)
+
+ансибл пройдется по j2 (шаблону) и все заменит для текущ хоста - подставит
+значение в переменные, а если не найдет значений - напишит ошибку
+
+наш текущ hosts содержит:
+
+[ALL_LINUX]
+linux1  ansible_host=172.31.3.113   owner=Petya
+linux3  ansible_host=172.31.19.251  owner=Vasya
+
+теперь идем в нашу директорию и переименовываем
+index.html в index.j2
+но это как бы остался наш thml файл, но мы его немного изменим
+
+добавим туда строки
+(для крастоты изменим цвет)
+<font color="gold">Owner of this server is: {{ owner }}<br>   --добавили переменную с владельцем
+                                                              она подставит туда владельца
+Server Host Name : {{ ansible_hostname}}<br>                  --добавили переменную с именем хоста
+Server OS Family : {{ ansible_os_family}}<br>                 --добавили переменную с OS
+IP Address of this Server is : {{ ansible_default_ipv4.address }}<br>
+
+
+в самом yml файле команда будет уже не копировать, пример:
+
+- nane: Generate INDEX.HTML file
+  template: src={{ source_folder }}/index.j2 dest={{ destin_folder }}/index.html mode=0555
+                                --вот этот модуль и генерирует, очень похож на копирование
+                                не забыть в назначении указать "нужный", а не шаблонный файл
+                                т.е. как он будет называться после отработки анибла
+  notyfy:                       --вывод успех или нет
+    - Restart Apache RedHat     --перезапуск сервисов
+    - Restart ApacheDebiad
+
+
+
+Создание Ролей - Roles
+
+нужно создать директорию roles
+
+чтобы создать роль depalay_apache_web
+в директории
+
+ansible-galaxy init depalay_apache_web
+
+эта команда создаст директорю depalay_apache_web в которой будут лежать
+файлы и директории, все файлы будут пустые
+
+не забыть выставлять пробелы (форматировать)
+
+идем в документацию по ролям и видим, что там рекомендовано
+в tasks - положить наши таски, слово tasks уже писать не нужно
+          (начинаеться с block или name)
+в handlers - положить наши хэндлеры, но само слово handlers
+             нам уже не нужно
+в default - положить default переменные для этой роли
+в vars - другие переменные для этой роли (разница директорий не понятна), само
+         слово vars не нужно
+в files - файлы которые д.б. копированы - т.е. все картинки которые мы копируем
+          положим сюда
+в templates - файлы которые д.б. генерированы - j2 файлы например
+в meta - хз
+
+теперь наш обычный рлэйбук нужно распилить на части и положить в 
+эти директории
+
+в файле tasks - нужно будет переписать пути источника и достижения
+
+в самом файле playbook6.yml
+
+---
+- name: Install Apache anu Uppload my Home Pages
+  hosts: all
+  become: yes   (true)
+
+и теперь тут пишим роли
+
+  roles:
+    - deploy_apache_web
+    - deploy_db
+    - configure_xxxxxxxx
+
+
+а чтобы роль запускать (с условием) только на серверах linux
+  roles:
+    - { role: deploy_apache_web, when: ansyble_system == 'Linux'}
+
+
+запуск этого всего:
+
+ansible-playbook playtbook.yml
+
+
+
+ Внешние переменные - extra-vars
+
+у нас есть наш плэйбук
+---
+- name: Install Apache
+  hosts: all
+  become: yes
+
+
+чтобы каждый раз не редактировать файл, а использовать переменные нужно
+изменить, на примере hosts
+
+  hosts: "{{ MYHOSTS }}"
+
+вот так выглядит внешняя переменная
+
+чтобы запустить
+
+ansible-playbook playbook6.yml --extra-vars "MYHOSTS=STAGING"
+
+допускается писать
+--extra-var
+--e
+ 
+тут STAGING  - группа определенная в файле hosts
+т.е. сейчас запустится плэйбук только для серверов состоящ в группе STAGING
+
+например сделаем
+ansible-playbook playbook6.yml --extra-vars "MYHOSTS=STAGING owner=DENIS"
+
+и переменная которая определена в файле hosts - перепишется, т.к экстара варс
+(внешняя переменная) имеет приоритет наивысший приоритет, т.е. они заменяют
+все значения
+
+
+если запустить плэйбук без переменной, а плэйбук ее ожидает - будет ошибка
+(undefined)
+
+
+
+ Использование Import, Include
+
+используем для разделения (декомпозиции)
+
+создаем файлик который будет создавать только директории
+(их модет быть тут много, но у нас две директории)
+
+nano create_folder.yml
+
+его содержание
+
+---
+- name: Create folder 1
+  file:
+    path: /home/secret/folder1
+    state: directory
+    mode: 0755
+
+ - name: Create folder 2
+   file:
+     path: /home/secret/folder2
+     state: directory
+     mode: 0755
+
+
+теперь создаем файлы
+
+nano create_files.yml
+
+---
+ - name: Create file1
+   copy:
+      dest: /home/secret/file1.txt
+      content:
+        Text Line1, in file1      --эта строка так и запишется в файл
+        Text Line2, in file1
+        Text Line3, {{ mytext }}
+
+ - name: Create file2
+   copy:
+      dest: /home/secret/file2.txt
+      content:
+        Text Line1, in file2
+        Text Line2, in file2
+        Text Line3, {{ mytext }}
+
+
+а теперь наш главный плэйбук будет включать наши файлики по созданию 
+директорий и файлов
+
+playbook7.includes.yml
+---
+ - name: My Super Playbook
+   hosts: all
+   become: yes   (true)
+
+   vars:
+    mytex: "Privet ot ADV-IT"
+
+   tasks:
+   - name: Ping test
+     ping:
+
+теперь включаем наши файлы
+
+ - name: Create Folders
+   include_tasks:     --используем include, через подчеркивание можем 
+                      дописывать все, что угодно или просто include
+                      на этом и остановимся
+
+    include: create_folders.yml   --название нашего файла
+    import: create_folders.yml    --название нашего файла - тоже работает
+
+ - name: Create Files
+    include: create_files.yml   --название нашего файла
+
+
+отличие  Import от Include
+
+если делать import - ансибл пройдется по всему плэйбуку перед тем как запустить
+задачи (как бы делает парсинг и проверяет синтаксис)
+берет import и сразу же все "копирует во внутрь главного плэйбука"
+и подставляет значение переменных, в нашем случае {{ mytext }}
+т.е. делает все и сразу как запустился
+
+
+include - подставляется только тогда, когда ансибл доходит до этой строки 
+и подстановка переменных осущестл только тогда, когда ансиб дошел до
+этой строки
+
+
+так же можно "перекидывать" переменные
+
+  include: create_files.yml  mytext="Hrllo world"   --вот так подменили переменную
+
+
+
+
+Перенаправление выполнения Task из Playbook на определённый сервер - delegate_to
+(Как запускать таски не на всех серверах, а на одном определенном сервере)
+
+
+---
+ - name: My Super Playbook
+   hosts: all
+   become: yes   (true)
+
+   vars:
+    mytex: "Privet ot ADV-IT"
+
+   tasks:
+   - name: Ping test
+     ping:
+
+ - name: Create file1
+   copy:
+      dest: /home/secret/file1.txt
+      content:
+        Text Line1, in file1      --эта строка так и запишется в файл
+        Text Line2, in file1
+        Text Line3, {{ mytext }}
+   delegate_to: linux3           --теперь эта таска выполнится только 
+                                 на linux3 сервере. т.е. файл создастся
+                                 только на сервере linux3, но побежиться
+                                 эта таска и на другом, но на другом не
+                                 создаст файл
+
+
+ - name: Create file2
+   copy:
+      dest: /home/secret/file2.txt
+      content:
+        Text Line1, in file2
+        Text Line2, in file2
+        Text Line3, {{ mytext }}
+
+для чего и зачем - ну например чтобы убрать решистрацию
+(вставим строчку до задачь по созданию файлов)
+
+- name: Unregister server from Load Balancer
+  shell: echo This server {{ inventory_hostname }} was 
+       deregister from Load Balanser >> /home/log.txt
+    --вот чтобы не на всех серверах запустилась таска - 
+    делегируем ее только на наш (нам так надо)
+  delegate_to: 127.0.0.1           --вот эта строчка
+                 --тут у нас запустится таска
+                  и в наш locathost запишутся переменные
+                  из других серверов
+
+
+а сейчас перезапустим сервера и подождем пока они поднимаутся
+
+- name: Reboot my servers
+  shell: sleep 3 && reboot now
+  async: 1   --просто так надо, чтоб небыло ошибок
+  poll: 0    --закринуть команду на сервер и ничего не ждать, 
+             просто отключитьсяо от него (проверять статус -
+             закончилась ли команда)
+
+ - name: Wait till my server will come up
+   wait_for:                             --ждем (чего?) 
+     host: "{{ inventory_hostname }}"    --ждем именно наш хост
+     state: started                      --ждем чтобы был запущен
+     delay: 5                            --начинать считать с 5 сек после как 
+                                         прошла команда
+     timeout: 40                         --сколько max ждать времени (в секундах)
+     geligate_to: 127.0.0.1
+
+так можно "оставить след" на местере
+
+
+а сейчас нам нужно обновить базу данных (пойдет по порядку
+который первый в интветори), но только один раз
+и не важно с каких серверов это бы происходило
+(еденичное выполнение)
+
+- name: Updating my Database
+  shell: echo UPDATING Database
+  run_once: true
+
+ну тут можно еще добавить deligate_to и указать на каком
+а если не добавлять, будет, вероятно всего, на первом 
+из списка в инвентори
+
+
+Перехват и Контроль ошибок
+
+например у нас есть 3 хоста, мы запускаем плэйбук и на одном (пусть втором)
+таск завершилась с ошибкой, на третьем все ок, дальше 1 - ок, а вот второй
+уже не запустит следующие таски, он как будто выйдет из игры
+как же контролировать?
+
+nano playbook_errorhandling.yml
+
+---
+- name: Ansible lesson 19
+  host: all
+  become: yes   (true)
+
+  tasks:
+  - name: Task Number1
+    yum: name=treeeee state=latest     --допущена ошибка в имени пакета и из-за
+                                       ошибки следующ таски не будут выполнены
+    ignore_errors: yes                 --если бодавить, то ошибки игнорируются и
+                                       плэйбук выполняется дальше, а не завершается 
+                                       с ошибкой
+  
+  - name: Task Number2
+    shell: ls -la /etc/
+    register: results                  --будет ли продолжено выполнение и вообще продолжнено 
+                                       ли оно, сохраним выполнение в переменной в result 
+
+  - debug:
+      var: results                     --выводим перемен на экран
+
+  - name: Task Number3
+    shell: echo PrivetMir!
+
+
+обрабатываем - если у нас есть что то в выводе то мы хотим это посчитать ошибкой
+или наоборот принять как истину
+
+  - name: Task Number4
+    shell: echo Hello World!
+    register: results
+    failed_when: "'World' in results.stdout"    --это как бы фильтр - ищет в тексте
+                                                точнее в переменной results, которая
+                                                отдает stdout - вот в нем и ищем
+                                                и если найдем World - сделаем failed
+
+но т.к. мы не указали после ignore_errors - ниже таски выполнять не будут
+
+еще контроль делают по return code , т.е. по rc=0, если =0 то
+команда выполнена удачно
+
+  - name: Task Number5
+    shell: echo Hello World!
+    register: results
+    failed_when: results.rc == 0
+или
+    failed_when: results.rc != 0
+
+а теперь сделаем чтобы у нас прекращалось выполнение не на одном сервере а на всех
+при возникновении ошибки хоть на каком то сервере
+сделать фатальную ошибку
+
+в этом случае нужно добавлять сверху
+
+---
+- name: Ansible lesson 19
+  host: all
+  any_errors_fatal: true      --вот тут это объявляется
+  become: yes   (true)
+
+
+
+
+ Хранение Секретов - ansible-vault
+
+ansible-vault create
+
+
+
+
+
+
+
+
 
 
