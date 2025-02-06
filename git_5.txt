@@ -123,6 +123,31 @@ git reset --hard HEAD~1
 HEAD~1 говорит откатиться на один коммит назад, допустимо указывать большее количество коммитов.
 
 
+git checkout <file_name>
+вернуть состояние отдельного файла обратно
+
+
+удалить папку из гита
+git rm -r myfolder
+git commit -m "myfolder is deleted"
+
+
+git конфликты:
+fetch first
+
+делаем
+git pull
+git push
+
+возможно после получим:
+non-fast-forward
+
+делаем
+git pull --rebase
+git push
+
+идея плохая, но модет сработает (не проверял)
+git push origin master --force
 
 
 Как Сделать Пустой Коммит (Затриггерить Билды)
