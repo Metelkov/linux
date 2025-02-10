@@ -1,0 +1,634 @@
+pxe - iPXE + Diskless stantion
+
+оглавление
+(Тесты проводились на kubuntu 22.04 как diskless, ubuntu 24.04 как diskless, ubuntu-server — установка 
+по сети (полноценный образ).)
+
+Предупреждение!! - все pxe разные (как показала практика) и где то потребуется включить legacy режим,
+а на каких то не будет работать вообще - не загрузится. Canonical MAAS в этом плане современее и лучше,
+но об этой системе в другой статье.
+И да, придется включать Network stack в bios (а после установки отклюыить)  Поэтому полной автономии не получится.
+
+
+1. создаем сервер который будет осуществлять установку
+2. настроим себе статику, на свой сервер
+3. Устанавливаем tftpd-hpa
+4. DHCP-сервер
+5. Использование dhcp-relay
+6. Настройка iPXE
+7. Скрипт стартовой настройки
+8. Используем nfs
+9. iPXE - установка
+10. Если случились ворнинги при сборки
+11. Сборка загрузчиков
+12. Создание пунктов меню
+13. принцип написания:
+14. Скрипт загрузки:
+15. "Подключение" образов
+16. memtest
+17. Kubuntu / Ubuntu (diskless stantion)
+18. Автоустановка Ubuntu server 24.04 без gui
+
+----------------------------------
+введение
+Классический PXE нам не подходит, т.к. мы собирается "грузить" полноценные образы, а не netinstall. Он нам будет 
+выдавать ошибку о нехватки памяти. iPXE от этого недостатка избавлен
+
+
+iPXE чем похож на PXE в самом начале настройки, но есть нюанс — iPXE могут понимать не все сетевые карты, чтобы 
+понимание было достигнуто нужно или перепрошить биос сетевой карты, что очень спорный вариант, т.к. карт много 
+и они могут находиться на сильном удалении от сервера iPXE и заниматься этому просто некому. Второй вариант — 
+использовать «цепную загрузку» - это когда клиент получает адрес по dhcp отрабатывает простой pxe, по tftp загружается 
+«прошивка» iPXE, опять срабатывает dhcp (но в этот раз отрабатывать будет iPXE) и опять получает прошивку iPXE и 
+так до бесконечности — тут нужно разорвать этот круг.
+
+
+kubunt u иubuntu были полноценные образы (не netinstall). Отличие от серверной установки — в них не был добавлен файл 
+autoinstall.yaml (расширение именно yaml, иначе работать не будет), который позволяет сделать автоматическую установку.
+
+
+
+1. создаем сервер который будет осуществлять установку
+Сервер будет на Ubuntu 22.04,  на нём сейчас нужно дополнительно установить:
+
+необходимо установить пакеты:
+tftp-hpa - TFTP сервер
+isc-dhcp-server - DHCP сервер
+gcc
+binutils
+make
+perl
+mtools
+git
+liblzma-dev
+syslinux
+
+
+2. Теперь настроим себе статику, на свой сервер:
+nano /etc/netplan/50-cloud-init.yaml
+
+внимательнее к разметке (числу пробелов!!)
+
+
+network:
+  ethernets:
+    enp0s3:
+      addresses:
+       - 10.0.2.90/24           #--это адрес нашего сервера
+      nameservers:
+        addresses:
+        - 8.8.8.8
+        - 1.1.1.1
+        search: []
+      routes:
+      - to: default
+        via: 10.0.2.1
+  version: 2
+
+
+3. Устанавливаем tftpd-hpa
+apt install tftpd-hpa
+
+смотрим конфиг
+nano /etc/default/tftpd-hpa
+
+содержит следующее:
+TFTP_USERNAME="tftp"
+TFTP_DIRECTORY="/srv/tftp"         #пусть к корню tftp
+TFTP_ADDRESS="0.0.0.0:69"
+TFTP_OPTIONS="--secure -l -v -r blksize"
+где:
+-r blksize — нужно для совместимости между PXE агентами
+"TFTP_USERNAME" - имя пользователя, с правами которого будет запущен сервер.
+"TFTP_DIRECTORY" - каталог с файлами, которые будут доступны для загрузки, корень нашего tftp
+"TFTP_ADDRESS" - интерфейс, на котором сервер будет ждать подключения.
+"TFTP_OPTIONS" - дополнительные опции. В данном случае включается подробный лог и переход в 
+каталог с файлами сразу после запуска, опция -l -v -r blksize обязательна, без нее может не работать
+
+
+4. DHCP-сервер
+apt install isc-dhcp-server
+
+возможно возникнут проблемы с разрешением FQDN, поэтому можно сразу писать ip адреса в конфиге
+
+настройка:
+главное не перепутать конфиги — они разные и в разных местах.  Если получаем ошибку
+
+not configured to listen on any interfaces
+
+но при этом проверка конфига проходит — то скорее всего пути перепутаны — нужно проверить
+
+
+конфиг первый:
+
+nano /etc/default/isc-dhcp-server
+в этот файл нужно прописать интерфейс на котором должен подниматься сервер.
+
+может содержать как одну строчку с указанным интерфейсом и тогда dhcp будет работать только на указанном 
+интерфейсе
+
+INTERFACESv4="enp0s3"
+ 
+а может содержать несколько строчек, без указания интерфейсов, тогда будет работать на всех интерфейсах, 
+но если у нас интерфейс один, то можно не редактировать, к тому же дефолтовая запись выглядит именно так:
+
+INTERFACESv4=""
+INTERFACESv6=""
+
+
+конфиг второй - сам конфиг сервера - без dhcp-relay
+
+nano /etc/dhcp/dhcpd.conf 
+
+Тут пишем:
+
+option domain-name "local.loc";
+option domain-name-server 10.0.2.1;
+ 
+option arch code 93 = unsigned integer 16;
+ 
+option space ipxe;
+option ipxe.no-pxedhcp code 176 = unsigned integer 8;
+default-lease-time 600;
+max-lease-time 7200;
+ddns-update-style none;
+ 
+autoritative;
+ 
+subnet 10.0.2.0 netmask 255.255.255.0 {
+  range 10.0.2.201 10.0.2.235;
+  option domain-name-server 10.0.2.1;
+  option domain-name "local.loc"
+  option routers 10.0.2.1;
+  option broadcast-address 10.0.2.255;
+  default-lease-time 600:
+  max-lease-time 7200;
+}
+ 
+option ipxe.no-pxedhcp = 1;
+ 
+if option arch != 00:00 {
+  filenaame «ipxe.efi»;
+} else {
+filename «undionly.kpxe»;
+}
+ 
+next-server 10.0.2.90;
+option tftp-server-name "10.0.2.90";              # ip нашего сервера tftp
+option root-path "tftp://10.0.2.90:/srv/tftp";    # / в конце не нужен
+
+
+На всякий случай проверяю синтаксис конфигурации на ошибки:
+
+dhcpd -t -cf /etc/dhcp/dhcpd.conf
+Если всё хорошо, указания ошибок в выводе не будет:
+
+Internet Systems Consortium DHCP Server 4.4.1 Copyright 2004-2018 Internet Systems Consortium.
+All rights reserved. For info, please visit https://www.isc.org/software/dhcp/
+Config file: /etc/dhcp/dhcpd.conf Database file: /var/lib/dhcp/dhcpd.leases PID file: /var/run/dhcpd.pid
+
+
+
+5. Использование dhcp-relay
+Если нам нужно проводить установку в другой сети, нам придется использовать dhcp-relay, конфиг очень 
+похож на тот, который выше, но есть небольшие отличия
+
+option domain-name "yadro.com";
+option domain-name-servers 172.19.25.154;
+ 
+option arch code 93 = unsigned integer 16;
+ 
+option space ipxe;
+option ipxe.no-pxedhcp code 176 = unsigned integer 8;
+default-lease-time 600;
+max-lease-time 7200;
+ 
+if exists agent.circuit-id and option dhcp-message-type = 3                              ## "agent.circuit-id" нужно чтобы использовать фильтрацию по mac
+                                                                                         ## работает с "binary-to-ascii(16, 8, ":", substring(hardware, 1, 6))"
+ {
+ log ( debug, concat( "Lease for ", binary-to-ascii (10, 8, ".", leased-address),        ## какие логи будут собираться
+ " MAC ", binary-to-ascii(16, 8, ":", substring(hardware, 1, 6)),
+ " IP ", binary-to-ascii(10, 8, ".", leased-address),
+ " port ", binary-to-ascii(10, 16, "", substring(option agent.circuit-id, 4, 2)),
+ " switch ", binary-to-ascii(16, 8, ":", substring(option agent.remote-id, 2, 20)),
+ " raw option-82 info is CID: ", binary-to-ascii (10, 8, ".", option agent.circuit-id), " AID: ",
+ binary-to-ascii(16, 8, ".", option agent.remote-id)));
+}
+ 
+subnet 172.31.186.0 netmask 255.255.254.0 {
+    class "lab-tsod" {
+match if binary-to-ascii(16, 8, ":", substring(hardware, 1, 6)) = "90:2e:16:8b:de:99";    ## нужный нам mac
+     }
+ 
+    pool {                                                                                ## пул для загрузки ipxe
+        range 172.31.187.240 172.31.187.250;
+        option subnet-mask 255.255.254.0;
+        option routers 172.31.186.1;
+        allow members of "lab-tsod";
+     }
+}
+ 
+subnet 172.19.25.0 netmask 255.255.255.0 {
+  range 172.19.25.240 172.19.25.250;
+  option domain-name-servers 172.19.25.154;
+  option domain-name "yadro.com";
+  option subnet-mask 255.255.254.0;
+  option routers 172.19.25.1;
+  option broadcast-address 172.19.25.255;
+  default-lease-time 600;
+  max-lease-time 7200;
+}
+ 
+ddns-update-style none;
+authoritative;
+ 
+ 
+option ipxe.no-pxedhcp = 1;
+ 
+if option arch != 00:00 {
+  filename "ipxe.efi";
+  } else {
+filename "undionly.kpxe";
+}
+ 
+next-server 172.19.25.154;
+option tftp-server-name "172.19.25.154";                 # ip нашего сервера tftp
+option root-path "tftp://172.19.25.154/srv/tftp";        # / в конце не нужен
+
+
+
+
+
+6. Настройка iPXE
+еще нам нужен файл для сборки, некий конфиг — создадим его:
+
+
+7. Скрипт стартовой настройки
+После загрузки iPXE от DHCP появится приглашение командной строки iPXE. Дальше нужно будет получить 
+ip и начать загрузку скрипта меню. Чтобы этого не делать вручную, можно встроить базовый скрипт
+
+скрипт start.ipxe (имя значения не имеет).
+
+#!ipxe
+:start
+dhcp && goto next || prompt --key s --timeout 1500 Press "s" for the iPXE command line... && shell || goto start
+ 
+:next
+chain tftp://10.0.2.90/boot.ipxe
+
+
+где:
+#!ipxe
+:start
+# Механизм получения ip. В случае ошибки - предлагает нажать "s" для запуска командной строки.
+# Иначе - начать снова. dhcp && goto next || prompt --key s --timeout 1500 Press "s" for the iPXE command line... && shell || goto start 
+:next
+# Случае успеха - загрузить "меню" с tftp-сервера (о нём - позже). chain tftp://10.0.2.90/boot.ipxe
+
+
+
+еще одна версия скрипта, который разрывает цепную загрузку (но я его не проверял)
+
+#!ipxe
+:start
+dhcp
+chain tftp://${next-server}/boot.ipxe || goto shell
+:shell
+echo Type 'exit' to get the back to the menu
+shell
+set menu-timeout 0 set submenu-timeout 0
+goto start
+
+
+
+8. Используем nfs
+Нам нужен и клиент и сервер для передачи наших файлов. Настройки шары задаются в /etc/exports, а
+настройки самой программы (nfs) в /etc/nfs.conf
+клиента не настраиваем, он просто должен быть
+
+apt install nfs-kernel-server
+
+для запуска
+sudo systemctl start nfs-kernel-server.service
+
+Конфигурация
+
+nano /etc/exports
+добавляем туда
+
+/srv/tftp *(ro,sync,no_subtree_check)
+#это наш каталог с tftp, он уже создан — шарим его полностью (в скобках нет пробелов)
+
+Убедитесь, что все добавляемые вами пользовательские точки монтирования созданы (/srv/tftp уже существуют):
+
+
+Примените новую конфигурацию через:
+sudo exportfs -a
+
+
+Конфигурация клиента NFS
+sudo apt install nfs-common
+
+
+Проверить работу можно так:
+
+Используйте команду mount, чтобы смонтировать общий каталог NFS с другого компьютера, введя в командной 
+строке командную строку, аналогичную следующей:
+
+sudo mkdir /opt/exampl
+или
+sudo mount example.hostname.com:/srv /opt/example
+
+
+9. iPXE - установка
+Далее идем на сайт https://github.com/ipxe/ipxe
+да, не на сайт производителя, а на их гит, и там !! в релизах !! обязательно там — там стабильнее, 
+переключаемся на вкладку tag
+https://github.com/ipxe/ipxe/tags
+там будут релизы, которые работают, в отличии от main где все еще могут встречаться не отлаженные процессы, 
+тут тоже могут, но меньше.
+Внизу будет ссылка на архив — скачиваем себе
+v1.21.1.tar.gz --это зависит от релиза, на момент прочтения этот может устареть
+
+
+wget «https://github.com/ipxe/ipxe/archive/refs/tags/v1.21.1.tar.gz»
+
+
+распаковываем
+tar -xvf ./v1.21.1.tar.gz
+
+
+заходим
+cd v1.21.1.tar.gz
+cd src
+
+
+собираем
+
+make
+
+
+10. Если случились ворнинги при сборки
+Тут можем получить ошибку, не то чтобы у нас битый пакет, скорее в системе не хватает какой то библиотеки.
+Мы получаем ворнинги и отказ от сборки, обходим это таким образом:
+
+make NO_WERROR=1
+
+скопируем наш скрипт стартовой настройки в директорию srс от нашего скаченного релиза ipxe
+
+cp /srv/tftp/start.ipxe ~/ipxe-1.21.1/src/
+
+
+
+11. Сборка загрузчиков
+Внимание! Строка имени файла является и его целевой конфигурацией, т.е. какое имя будет выбрано, для той 
+платформы и будет сборка.
+В ключе EMBED= указывается имя ранее созданного скрипта. Не забываем ключ от игнорирования ворнинглв
+
+
+make bin-i386-efi/ipxe.efi EMBED=start.ipxe  NO_WERROR=1
+make bin-i386-pcbios/undionly.kpxe EMBED=start.ipxe  NO_WERROR=1
+
+
+копируем полученные файлы к себе в корень сервера tftp
+
+
+cp bin-i386-efi/ipxe.efi /srv/tftp/
+cp bin-i386-pcbios/undionly.kpxe /srv/tftp/
+
+
+Режим legacy (cms) будет работать с undionly.kpxe, а для работы с uefi нам нужен ipxe.efi, но реализаций 
+uefi много и на каких то компьютерах это может не заработать (тест на ноутбуке 2017 г. выпуска).
+
+Казалось бы, что нужно собрать загрузчик для uefi той версии, но на офиц сайте https://www.ipxe.org/download 
+про сборку для uefi всего пара строк:
+You can also build a .efi executable which you can chainload from an existing UEFI 
+ROM (or run directly from the UEFI shell):
+
+
+make bin-x86_64-efi/ipxe.efi
+
+Так же uefi отличаются реализацией 32/64 бит и собрать для 64 бит на 32 битной системе не получится 
+(фокус собрать на виртуалке, а потом скопировать на реальную машину не пройдет).
+Нужно производить сборку на том хосте, который будет "отдавать загрузчик в сеть"
+
+
+12.Создание пунктов меню
+Для автоустановки нам нужен пункт "Ubuntu" (цель - установить  Ubuntu), но часть пунктов меню может быть полезна
+
+В корне нашего tftp  создаем файл menu.ipxe сл. содержания
+
+
+#!ipxe
+ 
+:start
+menu iPXE boot menu
+item -k e exit (E)xit and boot from disk
+item
+item --gap --  ---MemTest86---      #в начале 2 тере! - описание ниже
+item -k m memtest Memtest (m)
+item
+item --gap --  ---Debian Image ---
+item ubuntu Ubuntu
+item
+item --gap -- ---Reboot ---
+item reboot Reboot
+item
+item --gap -- ---shell ---
+shell Shell
+item
+item --gap -- ---config ---
+item config Config
+item
+ 
+choose -d ubuntu -t 30000 selected
+#выбор первого пункта меню (внимание на регистр букв) и отсчет 30 сек до автоматического выбора
+goto ${selected}
+ 
+:ubuntu
+kernel userver/casper/vmlinuz
+initrd userver/casper/initrd
+imgargs vmlinuz initrd=initrd root=/dev/nfs boot=casper netboot=nfs nfsroot=10.0.2.90:/srv/tftp/userver/ \
+ro netboot=nfs ip=dhcp autoinstall --
+ 
+boot || goto error
+goto start
+ 
+:memtest
+kernel memdisk || goto error
+initrd ./memtest/Memtest86-4.3.7.iso || goto error
+imgargs memdisk memdisk_size=1000000 iso raw || goto error
+ 
+boot || goto error
+goto start
+ 
+ 
+:config
+config
+goto start
+ 
+:reboot
+reboot
+ 
+:shell
+shell
+goto start
+ 
+:exit
+echo Boot from disk...
+sleep 2
+exit
+ 
+:error
+echo Failed - have - error
+sleep 1
+goto shell
+
+
+13. принцип написания:
+item
+может использоваться как пустая строка (отступ) если не указаны параметры
+
+item - - gap - - ----Memtest86-----
+тут - - gap- - выступает как отображение пункта меню (название/заголовок пункта), он не выбираемый, 
+а для информации (разделения)
+
+
+item -k m memtest Memtest (m)
+тут -k задаем горячую клавишу, в данном случае m первая надпись — ссылка (goto) на действие, 
+оно описано ниже, вторая надпись «Memtest» - уже отобразить пункт меню который можно выбрать
+
+choose -d exit -t 30000 selected
+goto ${selected}
+начинается отсчет времени, тут 30 сек, до применения первого пункта меню
+
+тут shell - это shell от ipxe
+
+где gap там два тире слитно спереди и после через пробел тоже 2 тире слитно (т. е. Между 
+тире и gap спереди нет пробела, а после пробел обязателен)
+
+так же — все наши директории которые хранят распакованные образы хранятся в корне файла menu.ipxe 
+(например, еcли menu.ipxe лежит в /srv/tftp/ то и все директории содержащие разжатые образы, 
+должны так же быть в /srv/tftp/) и важно соблюдать регистр.
+
+
+14. Скрипт загрузки:
+Ранее, в загрузчики был встроен скрипт, который в случае успешного получения ip, загружал и запускал скрипт boot.ipxe
+
+сам скрипт boot.ipxe содержит всего 2 строки 
+
+
+содержание boot.ipxe:
+
+
+#!ipxe
+chain --replace --autofree menu.ipxe
+
+
+
+15. "Подключение" образов
+Образы подключаются со своими параметрами, параметры прописываются в меню menu.ipxe.
+
+
+16. 
+memtest
+Создадим директорию для memtest и скачаем его с офиц сайта . Делаем это в корне нашего tftp.
+
+https://www.memtest86.com/downloads/memtest86-4.3.7-iso.tar.gz
+
+
+mkdir -p /srv/tftp/memtest/
+cd /srv/tftp/memtest/
+wget «https://www.memtest86.com/downloads/memtest86-4.3.7-iso.tar.gz»
+
+и распакуем его тут же в корень этой директории
+
+tar -xvf memtest86-4.3.7-iso.tar.gz
+должны получить iso образ - его и будем запускать - параметры запуска описаны в menu.ipxe
+
+
+
+
+17. Kubuntu / Ubuntu (diskless stantion)
+Так же как и Ubuntu - только меняем путь до распакованного образа.
+Важно - в образе есть директория .disk - которая скрыта - ее тоже нужно копировать 
+к распакованным директориям и файлам без нее работать не будет.
+
+
+:Kubuntu
+kernel kbunt22/casper/vmlinuz
+initrd kbunt22/casper/initrd
+imgargs vmlinuz initrd=initrd root=/dev/nfs boot=casper netboot=nfs nfsroot=10.0.2.90:/srv/tftp/kbunt22/ ro netboot=nfs ip=dfcp --
+#nfsroot=10.0.2.90:/srv/tftp/kbunt22/ - тут закрывающий слеш обязателен!
+
+boot || goto error
+goto start
+
+
+
+
+18. Автоустановка Ubuntu server 24.04 без gui
+userver — директория в которой находится распакованный образ Ubuntu server 24.04, эта директория 
+в свою очередь лежит в /srv/tftp/
+в корень userver нужно положить наш конфиг, который будет запускать автоустановку. 
+Файл обязательно должен называться autoinstall.yaml (расширение именно yaml, иначе работать не будет)
+
+
+генерация пароля:
+
+mkpasswd -m sha-512 "ubuntu"
+где "ubuntu" - это наш пароль
+mkpasswd входит в состав whois, нужно установить
+
+
+sudo apt install whois
+
+получим хэш, который вставим в соотв. строку (хэши могут отличаться и/или быть разными при 
+генерации подряд - работать будет)
+
+
+
+минимальный конфиг: (обязательно соблюдать разметку yaml)
+
+#cloud-config                                    #обязательная строчка
+autoinstall:
+  version: 1
+  identity:
+    hostname: ubuntu
+    username: ubunt
+    password: "$6$gnqbMUzHhQzpDEw.$.cCNVV..."     #тут д.б. хэш в кавычках, а не пароль как слово, если будет просто слово — работать не будет
+  storage:                                        #так делается разметка всего диска без LVM
+    layout:
+      name: direct
+  networks:                                       #правила от netplan
+    version: 2
+    ethernets:
+      enp0s3:
+        addresses:
+        - 10.0.2.115/24
+        nameservers:
+          addresses:
+          - 8.8.8.8
+          - 1.1.1.1
+          search: []
+       routes:
+       - to: default
+         via: 10.0.2.1
+                                                #настраиваем статику, интерфейс д.б. какой обычно (стандартный),
+                                                #ip адрес должен быть за пределами range dhcp, обязательно соблюдать разметку yaml
+ 
+  ssh:
+    install-server: yes
+    allow-pw: yes
+
+
+
+
+второй конфиш - чтобы получать адрес dhcp в нужно немного изменить настройки сети:
+
+networks:
+  version: 2
+  ethernets:
+    enp0s3:
+      dhcp4: true
+                           #но этот адрес будет получаться из того же пула в котором наш ipxe!! (dhcp сервер у нас один)
