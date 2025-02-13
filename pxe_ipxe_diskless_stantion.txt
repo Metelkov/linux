@@ -27,7 +27,7 @@ pxe - iPXE + Diskless stantion
 15. "Подключение" образов
 16. memtest
 17. Kubuntu / Ubuntu (diskless stantion)
-18. Автоустановка Ubuntu server 24.04 без gui
+18. Автоустановка Ubuntu server 24.04 без и 22.04 gui
 
 ----------------------------------
 введение
@@ -193,8 +193,8 @@ Config file: /etc/dhcp/dhcpd.conf Database file: /var/lib/dhcp/dhcpd.leases PID 
 Если нам нужно проводить установку в другой сети, нам придется использовать dhcp-relay, конфиг очень 
 похож на тот, который выше, но есть небольшие отличия
 
-option domain-name "yadro.com";
-option domain-name-servers 172.19.25.154;
+option domain-name "my_server.com";
+option domain-name-servers 10.10.25.154;
  
 option arch code 93 = unsigned integer 16;
  
@@ -215,26 +215,26 @@ if exists agent.circuit-id and option dhcp-message-type = 3                     
  binary-to-ascii(16, 8, ".", option agent.remote-id)));
 }
  
-subnet 172.31.186.0 netmask 255.255.254.0 {
+subnet 170.30.186.0 netmask 255.255.254.0 {
     class "lab-tsod" {
 match if binary-to-ascii(16, 8, ":", substring(hardware, 1, 6)) = "90:2e:16:8b:de:99";    ## нужный нам mac
      }
  
     pool {                                                                                ## пул для загрузки ipxe
-        range 172.31.187.240 172.31.187.250;
+        range 17.30.187.240 17.30.187.250;
         option subnet-mask 255.255.254.0;
-        option routers 172.31.186.1;
+        option routers 17.30.186.1;
         allow members of "lab-tsod";
      }
 }
  
-subnet 172.19.25.0 netmask 255.255.255.0 {
-  range 172.19.25.240 172.19.25.250;
-  option domain-name-servers 172.19.25.154;
-  option domain-name "yadro.com";
+subnet 10.10.25.0 netmask 255.255.255.0 {
+  range 10.10.25.240 10.10.25.250;
+  option domain-name-servers 10.10.25.154;
+  option domain-name "my_server.com";
   option subnet-mask 255.255.254.0;
-  option routers 172.19.25.1;
-  option broadcast-address 172.19.25.255;
+  option routers 10.10.25.1;
+  option broadcast-address 10.10.25.255;
   default-lease-time 600;
   max-lease-time 7200;
 }
@@ -251,9 +251,10 @@ if option arch != 00:00 {
 filename "undionly.kpxe";
 }
  
-next-server 172.19.25.154;
-option tftp-server-name "172.19.25.154";                 # ip нашего сервера tftp
-option root-path "tftp://172.19.25.154/srv/tftp";        # / в конце не нужен
+next-server 10.10.25.154;
+option tftp-server-name "10.10.25.154";                 # ip нашего сервера tftp
+option root-path "tftp://10.10.25.154/srv/tftp";        # / в конце не нужен
+
 
 
 
