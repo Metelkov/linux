@@ -1,0 +1,11 @@
+после обновления могут быть проблемы - загрузка не пройдет до конца - будет ошибка
+
+переходим в консоль, пользователи и пароли все сохранены
+и там:
+
+sudo dpkg --configure -a
+sudo apt full-upgrade
+sudo apt install --fix-broken
+sudo apt autoremove 
+
+перезагружаем
