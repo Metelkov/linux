@@ -1,0 +1,386 @@
+docker search 1c    - pokaz какие контенеры можено скачать и пользовать с докерхаб
+                      тут ищем 1с
+docker pull ubuntu  - скачать заготоаку образа
+docker images       - просмотреть какие контейнеры скачены (заготовки)
+docker ps           - показиывает загруженный, рабочие контейнеры
+docker ps           -a  смотреть все, ы т.ч. и не запущенные контейнеры
+
+
+
+docker run     - запускает образ - делает уже контейнер, который будет крутиться в системе
+docker images  - просмотреть какие контейнеры скачены (заготовки)
+docker run     -it ubuntu - запустить контейнер
+                работать так же как и на стандартной ситеме в linux
+exit           - выходит из контейнера (ctrl +d )
+docker ps      - показиывает загруженный, рабочие контейнеры
+docker ps -a   - смотреть все, ы т.ч. и не запущенные контейнеры
+docker start   - номер контейнера
+docker stop    - номер контейнера
+docker attach хэш        - присоединение к контейнеру
+docker rm имя или хэш    - удалит контейнер
+docker image rm имя образа (заготовки)       - удалит заготовку (образ)
+
+docker commit 94280b6b69b7 lalala   - сотздает образ из развернутого контейнера 
+                                      можно тут поменять имя
+
+docker volume create lalala_hdd      - создажим общуюю шару
+docker volume ls                     - смотреть какие шары созданы
+https://linux-notes.org/rabota-s-tomami-volumes-v-docker/
+
+docker inspect lalala_hdd                     - смотреть что в шаре
+/var/lib/docker/volumes/                      - общий контейнер
+/var/lib/docker/volumes/lalala_hdd/_data/     - можно скопировать в этот контейнер конфиг
+
+
+
+docker run -d -P -v http-custom-data:/usr/share/nginx/html nginx 
+запускаем докер с образа nginx
+-d  detach запуск контейнера в фоне
+-P, --publish-all                 Publish all exposed ports to random ports
+-v, --volume value                Bind mount a volume (default []). The comma-delimited
+                                    `options` are [rw|ro], [z|Z],
+                                    [[r]shared|[r]slave|[r]private], and
+                                    [nocopy]. The 'host-src' is an absolute path
+                                    or a name value.
+
+
+
+http-custom-data: - что подключаем
+http-custom-data: -  куда подключаем
+
+lalala_hdd:/tmp/lalala lalala
+
+docker docker run -it -d -P -v lalala_hdd:/tmp/lalala2 lalala
+
+lalala_hdd - папка которая на диске вне докера
+/tmp/lalala2 - внутри работующего контейнера
+
+
+
+docker search apache             - искать образ на которлм присутстыует апач
+
+docker run -it nginx             - скачает и установит образ, если нет локально 
+                                  (пакет в котором установлен nginx)
+
+docker port $(docker ps -lq)     - смотреть на котором порту крутится с ервис (реальный)
+
+
+
+Проброс портов
+docker run -p 127.0.0.1:8080:80 ubuntu bash
+
+Данная команда привязывает 8080 порт контейнера к порту 80 хоста 127.0.0.1
+в начале порт который мы будем отображать в браузере www.ресурс:8080
+80 - порт который обычно работает
+
+
+
+
+Подключение контейнера к сети (--network)
+Когда вы запускаете контейнер используйте флаг --network для подключения 
+контейнера к сети. Команда ниже добавляет контейнер busyboxк сети my-net.
+$ docker run -itd --network=my-net busybox
+
+Вы так же можете указать IP адрес для контейнера в пользовательской 
+сети при запуске с помощью флагов --ip и --ip6.
+$ docker run -itd --network=my-net --ip=10.10.9.75 busybox
+
+Если вы хотите добавить запущенный контейнер к сети используйте команду 
+docker network connect.
+
+Вы можете отключить контейнер от сети с помощью команды docker network disconnect.
+
+
+https://dker.ru/docs/docker-engine/engine-reference/command-line-reference/run/
+
+
+
+***************************************
+volume  (примонтировать каталог)
+
+чтобы примонтировать волиум или папку, нужно стартовать -run- заново. 
+убить все старые, которые не монтировались
+их всеравно нужно стартовать заново с новыми ключами (волиум)
+docker run -d -p 127.0.0.1:8080:80 -v /opt/docker_vol/nginx_php_fpm:/var/www/html bb49f1636b1a
+тут монтируем папку на локальной системе в контейнер в папкау внутри докера
+
+docker run -d -p 127.0.0.1:8080:80 -v dir_php_fpm:/var/www/html bb49f1636b1a
+тут монтируем волиум во внутрь докера
+
+тут просто запускаем остановленный
+docker start -d -p 127.0.0.1:8080:80 -v dir_php_fpm:/var/www/html 48ce0cc313c0
+
+
+
+docker run -v /local/dir:/containr/dir
+
+реальный пример
+docker run -v /home/user:/mnt
+т.е. папка /home/user с хостового сервера будет примонтирована в папку /mnt в контейнере
+
+-v /var/log/syslog  - для монтирования отдного файла
+
+
+
+
+пишем кривенький скрипт, будет ругаться при старте, но работает
+для начала остановим 
+docker stop 48ce0cc313c0
+зажимаем волиум в архив
+zip -r dir_php_fpm`date --iso` /var/lib/docker/volumes/dir_php_fpm/
+стартуем контейнер
+docker start d p 127.0.0.1:8080:80 v dir_php_fpm:/var/www/html 48ce0cc313c0
+получаем ругательства
+Error response from daemon: No such container: d
+Error response from daemon: No such container: p
+Error response from daemon: No such container: 127.0.0.1:8080:80
+Error response from daemon: No such container: v
+Error response from daemon: No such container: dir_php_fpm:/var/www/html
+48ce0cc313c0
+Error: failed to start containers: d, p, 127.0.0.1:8080:80, v, dir_php_fpm:/var/www/html
+
+проверяем - работает
+[root@pc-169-0-100-190 home]# docker ps -a
+CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS              PORTS                                       NAMES
+48ce0cc313c0        bb49f1636b1a        "docker-php-entryp..."   47 minutes ago      Up 8 minutes        443/tcp, 9000/tcp, 127.0.0.1:8080->80/tcp   trusting_blackwell
+
+
+******************************************************
+
+samba
+
+
+docker images 
+REPOSITORY                          TAG                 IMAGE ID            CREATED             SIZE
+docker.io/dperson/samba             latest              1993295661b1        6 weeks ago         50.7 MB
+
+docker volume create samba_dokcker_vol
+
+docker run -dit -p 127.0.0.1:139:139 -p 445:445 -p 137:137/udp -p 138:138/udp 1993295661b1
+
+docker exec -ti f5f071eed15a /bin/sh
+
+
+
+-v samba_dokcker_vol:/
+
+
+docker volume ls
+DRIVER              VOLUME NAME
+local               dir_php_fpm
+local               samba_dokcker_vol
+
+cp snmp.txt /var/lib/docker/volumes/samba_dokcker_vol/_data/
+
+
+настройки самой самбы, внутри контенера
+
+https://bozza.ru/art-262.html
+https://www.gotoadm.ru/file-serve-centos-7-settings-samba/
+
+
+useradd -M user1
+pass: user1
+useradd -M user2
+pass: user2
+
+в контейнере создадим
+/opt/samba/user1
+/opt/samba/user2
+/opt/samba/share
+
+
+
+
+f5f071eed15a        1993295661b1        "/sbin/tini -- /us..."   23 hours ago        Exited (255) 3 minutes ago                       gifted_poincare
+помер, нужно делать другой
+причина:
+
+docker logs f5f071eed15a
+
+smbd version 4.10.8 started.
+Copyright Andrew Tridgell and the Samba Team 1992-2019
+SamInfo3_for_guest: Unable to locate guest account [samba_guest]!
+get_guest_info3 failed with NT_STATUS_NO_SUCH_USER
+ERROR: failed to setup guest info.
+
+не создал гостя пользователя
+
+
+генерим новый
+docker run -dit -p 127.0.0.1:139:139 -p 445:445 -p 137:137/udp -p 138:138/udp 1993295661b1
+
+запустился
+
+docker ps -a
+CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS                            PORTS                                                                        NAMES
+1f7b8a382d6d        1993295661b1        "/sbin/tini -- /us..."   13 seconds ago      Up 8 seconds (health: starting)   0.0.0.0:137-138->137-138/udp, 127.0.0.1:139->139/tcp, 0.0.0.0:445->445/tcp   loving_minsky
+
+docker stop 1f7b8a382d6d 
+1f7b8a382d6d
+
+docker start -dit -p 127.0.0.1:139:139 -p 445:445 -p 137:137/udp -p 138:138/udp 1f7b8a382d6d
+
+docker ps -a
+CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS                            PORTS                                                                        NAMES
+1f7b8a382d6d        1993295661b1        "/sbin/tini -- /us..."   16 minutes ago      Up 8 seconds (health: starting)   0.0.0.0:137-138->137-138/udp, 127.0.0.1:139->139/tcp, 0.0.0.0:445->445/tcp   loving_minsky
+
+touch /var/lib/docker/volumes/samba_dokcker_vol/_data/filefile.file
+
+
+[root@pc-169-0-100-190 home]# docker start dit p 127.0.0.1:139:139 p 445:445 p 137:137/udp p 138:138/udp v samba_dokcker_vol:/opt/samba/share 1f7b8a382d6d
+Error response from daemon: No such container: dit
+Error response from daemon: No such container: p
+Error response from daemon: No such container: 127.0.0.1:139:139
+Error response from daemon: No such container: p
+Error response from daemon: No such container: 445:445
+Error response from daemon: No such container: p
+Error response from daemon: No such container: 137:137/udp
+Error response from daemon: No such container: p
+Error response from daemon: No such container: 138:138/udp
+Error response from daemon: No such container: v
+Error response from daemon: No such container: samba_dokcker_vol:/opt/samba/share
+1f7b8a382d6d
+Error: failed to start containers: dit, p, 127.0.0.1:139:139, p, 445:445, p, 137:137/udp, p, 138:138/udp, v, samba_dokcker_vol:/opt/samba/share
+[root@pc-169-0-100-190 home]# docker ps -a
+CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS                            PORTS                                                                        NAMES
+1f7b8a382d6d        1993295661b1        "/sbin/tini -- /us..."   31 minutes ago      Up 6 seconds (health: starting)   0.0.0.0:137-138->137-138/udp, 127.0.0.1:139->139/tcp, 0.0.0.0:445->445/tcp   loving_minsky
+f5f071eed15a        1993295661b1        "/sbin/tini -- /us..."   23 hours ago        Exited (255) 45 minutes ago                                                                                    gifted_poincare
+48ce0cc313c0        bb49f1636b1a        "docker-php-entryp..."   28 hours ago        Exited (0) 23 hours ago                                                                                        trusting_blackwell
+
+
+
+******************************************************
+
+
+save / load
+docker save 1993295661b1 > 1_save.tar
+в текущз директории создаст 1_save.tar готово для переноса
+
+docker load < ubuntu.tar.gz
+docker load --input ubuntu.tar
+
+загрузка
+
+https://habr.com/ru/company/flant/blog/336654/
+
+
+***************************************************
+
+
+пример
+[root@bank metelkov]# 
+[root@bank metelkov]# docker run -d -P f949e7d76d63
+11dd073f300aad2ca986604fdb6f9d43ed4846966d0853483e44fc0e5e57a43d
+[root@bank metelkov]# ll /var/lib/docker/volumes/
+итого 24
+drwxr-xr-x. 1 root root    10 сен 26 19:24 lalala_hdd
+-rw-------. 1 root root 32768 сен 26 19:24 metadata.db
+[root@bank metelkov]# docker attach ed30785d0493 
+^C[root@bank metelkov]# 
+[root@bank metelkov]# 
+[root@bank metelkov]# 
+[root@bank metelkov]# 
+[root@bank metelkov]# 
+[root@bank metelkov]# docker ps
+CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS              PORTS                   NAMES
+11dd073f300a        f949e7d76d63        "nginx -g 'daemon ..."   2 minutes ago       Up 2 minutes        0.0.0.0:32768->80/tcp   practical_kirch
+2d2b9cad4819        lalala              "/bin/bash"              25 minutes ago      Up 25 minutes                               nervous_hamilton
+[root@bank metelkov]# 
+
+
+пример 2
+подключаем общую папку которая чтото содержет нам нужное, которая доступна из нашей обычной системы
+и в нем лежит файлик
+ВНИМАНИЕ!  смотреть docker ps - там изменется порт
+
+
+
+докер волюум - внешн подключаемая папка которая видна и контейнеру и хостовой системе, может быть подкл к неск контейнерам
+
+docker volume create _имя почти папки_
+лежит /varlib/docker/volumes/_тмя пости папки_
+в этой папке _data  в ней лежит та самая хранилка
+в нее можно скопировать все что надо и в docker run подключ к новому контейнеры
+
+
+[root@bank metelkov]# docker volume ls
+RIVER              VOLUME NAME
+local               lalala_hdd
+local               nginx_hdd
+
+docker  system prune
+удалит все неиспользуемые волюмы (вероятно и те к которым нет подключения, т.е. когда контейнер не запущен)
+
+ 
+[root@bank metelkov]# cd /var/lib/d
+dav/      dbus/     dhclient/ dnsmasq/  docker/   
+[root@bank metelkov]# cd /var/lib/docker/
+btrfs/      containers/ image/      network/    plugins/    swarm/      tmp/        trust/      volumes/    
+[root@bank metelkov]# cd /var/lib/docker/volumes/
+[root@bank volumes]# ll
+итого 24
+drwxr-xr-x. 1 root root    10 сен 26 19:24 lalala_hdd
+-rw-------. 1 root root 32768 сен 26 20:08 metadata.db
+drwxr-xr-x. 1 root root    10 сен 26 20:08 nginx_hdd
+[root@bank volumes]# cd nginx_hdd/
+[root@bank nginx_hdd]# ll
+итого 0
+drwxr-xr-x. 1 root root 0 сен 26 20:08 _data
+[root@bank nginx_hdd]# cd _data/
+[root@bank _data]# echo "<h1>heppo</h1>" > index.html
+[root@bank _data]# docker ps
+CONTAINER ID        IMAGE               COMMAND                  CREATED             STATUS              PORTS                   NAMES
+11dd073f300a        f949e7d76d63        "nginx -g 'daemon ..."   7 minutes ago       Up 7 minutes        0.0.0.0:32768->80/tcp   practical_kirch
+2d2b9cad4819        lalala              "/bin/bash"              30 minutes ago      Up 30 minutes                               nervous_hamilton
+[root@bank _data]# docker stop 1dd073f300a 
+Error response from daemon: No such container: 1dd073f300a
+[root@bank _data]# docker stop 11dd073f300a 
+11dd073f300a
+
+[root@bank _data]# docker run -d -P -v nginx_hdd:/usr/share/nginx/html nginx
+cd0b0658d146e3768b3086d25e8b675ec04ea266fbfb114a5bce7bd016e4af51
+останавливаю
+заново запускаю контейнер, получается новый, тз образа
+run -d -P -v
+-v = volume после идет имя волиума (_почти новая папка_) 
+nginx_hdd:/usr/share/nginx/html  тут в контейнере
+
+
+nginx мой запускаемый по новой образ
+
+
+
+
+[root@bank _data]# 
+
+docker run -d -P -v nginx_hdd:/usr/share/nginx/html nginx
+docker run -d -P -v = так нужно запускать
+nginx_hdd: = имя моей папки-шары которая хранит содержимое, которое будем впихивать в контейнер
+/usr/share/nginx/html  = то куда в контейнере будет примонтирована папка
+nginx = тут наш файл контейнера который должен быть запущен
+
+*************** пример 2 завершился *******
+
+получаем шелл на наш контейнер
+docker exec -it cd0b0658d146 /bin/sh
+docker exec -it  = так надо
+cd0b0658d146 = наш контейнер 
+ /bin/sh = чтобы получить шелл
+
+
+
+смотрим что есть в контейнере - какие папки
+docker exec -it cd0b0658d146 ls
+docker exec -it  = твк надо
+эcd0b0658d146 = наш контейнер
+ ls = просмотр
+
+
+
+docket run -d -it ubuntu
+получаем хэш и докер не перехватывает управление
+
+
+docker run -d -it --name test_kont ubuntu
+присваиваем имя для контейнера
